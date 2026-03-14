@@ -10,3 +10,4 @@ python-dotenv
 pyyaml
 schedule
 requests
+langgraph
