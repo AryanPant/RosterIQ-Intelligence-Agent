@@ -43,39 +43,7 @@ It answers natural language questions like:
 
 ## Architecture
 
-```
-User (Streamlit UI / CLI)
-        │
-        ▼
-LangGraph / Direct Agent Pipeline  (graph/agent_graph.py)
-        │
-        ▼
-┌──────────────────────────────────────────────────────┐
-│                   ORCHESTRATION                      │
-│                                                      │
-│  SupervisorAgent → PlannerAgent → RootCauseEngine    │
-│      │                                               │
-│      ├── PipelineHealthAgent  (stage diagnostics)    │
-│      ├── RecordQualityAgent   (market metrics)       │
-│      └── ProcedureRunner      (YAML workflows)       │
-│                                                      │
-│  AnswerAgent  (synthesis · charts · report)          │
-└──────────────────────────────────────────────────────┘
-        │
-        ▼
-┌──────────────────────────────────────────────────────┐
-│                 INFRASTRUCTURE                       │
-│                                                      │
-│  EpisodicMemory   ProceduralMemory   SemanticMemory  │
-│  (SQLite+FAISS)   (YAML registry)    (JSON+FAISS)    │
-│                                                      │
-│  DataQueryTool   VisualizationTool   WebSearchTool   │
-│  ReportGenerator  AnomalyDetector   OpenRouterLLM    │
-└──────────────────────────────────────────────────────┘
-        │
-        ▼
-Answer + Visualizations + Report + Web Context
-```
+![Architecture Diagram](rosteriq_agent_pipeline.svg)
 
 ---
 
