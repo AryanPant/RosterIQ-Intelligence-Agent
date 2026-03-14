@@ -32,7 +32,7 @@ class EpisodicMemory:
             "memory",
             "episodic_memory_store.db",
         )
-        self.storage_path, self.legacy_json_path = self._resolve_storage_paths(configured_path)
+        self.storage_path = self._resolve_storage_path(configured_path)
         self.index_path = index_path or os.path.splitext(self.storage_path)[0] + ".index"
 
         self.embedding_model = self._load_embedding_model()
@@ -41,15 +41,14 @@ class EpisodicMemory:
         self.llm = OpenRouterClient()
 
         self._initialize_database()
-        self._migrate_legacy_json_if_needed()
         self.entries = self._load_entries_from_db()
         self._sync_index_with_entries()
 
-    def _resolve_storage_paths(self, configured_path):
+    def _resolve_storage_path(self, configured_path):
 
         if configured_path.lower().endswith(".json"):
-            return os.path.splitext(configured_path)[0] + ".db", configured_path
-        return configured_path, os.path.splitext(configured_path)[0] + ".json"
+            return os.path.splitext(configured_path)[0] + ".db"
+        return configured_path
 
     def _connect(self):
 
@@ -139,65 +138,6 @@ class EpisodicMemory:
             return True
 
         return False
-
-    def _clean_entries(self, entries):
-
-        if not isinstance(entries, list):
-            return []
-
-        return [entry for entry in entries if not self._is_meta_memory_entry(entry)]
-
-    def _migrate_legacy_json_if_needed(self):
-
-        if not self.legacy_json_path or not os.path.exists(self.legacy_json_path):
-            return
-
-        with self._connect() as connection:
-            existing_count = connection.execute("SELECT COUNT(*) FROM episodic_memory").fetchone()[0]
-            if existing_count:
-                return
-
-        try:
-            with open(self.legacy_json_path, "r", encoding="utf-8") as handle:
-                legacy_entries = self._clean_entries(json.load(handle))
-        except (json.JSONDecodeError, OSError):
-            return
-
-        if not legacy_entries:
-            return
-
-        with self._connect() as connection:
-            for entry in legacy_entries[-self.MAX_ENTRIES:]:
-                embedding_vector = self.embed_text(self._response_text_for_embedding(entry))
-                connection.execute(
-                    """
-                    INSERT INTO episodic_memory (
-                        timestamp,
-                        query,
-                        response,
-                        metadata_json,
-                        context_tags_json,
-                        conversation_summary,
-                        what_worked,
-                        what_to_avoid,
-                        embedding
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        self._stringify_field(entry.get("timestamp"))
-                        or datetime.utcnow().isoformat(timespec="seconds") + "Z",
-                        self._stringify_field(entry.get("query")),
-                        self._stringify_field(entry.get("response")),
-                        json.dumps(entry.get("metadata", {}), sort_keys=True),
-                        json.dumps(entry.get("context_tags", [])),
-                        self._stringify_field(entry.get("conversation_summary", "")),
-                        self._stringify_field(entry.get("what_worked", "")),
-                        self._stringify_field(entry.get("what_to_avoid", "")),
-                        self._serialize_embedding(embedding_vector),
-                    ),
-                )
-            connection.commit()
-        self._trim_entries()
 
     def _load_entries_from_db(self):
 
@@ -621,4 +561,4 @@ Metadata: {json.dumps(metadata)}
         if query_vector is None:
             return self._fallback_retrieve(query, query_profile=query_profile, limit=limit)
 
-        return self.retrieve(query, query_profile=query_profile, limit=limit)
+        return self.retrieve(query, query_profile=query_profile, limit=limit) 

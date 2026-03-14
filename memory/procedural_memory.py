@@ -185,20 +185,29 @@ class ProceduralMemory:
 
         self.reload()
         normalized = (user_query or "").lower()
-        update_markers = [
-            "create",
+        explicit_procedure_markers = [
+            "create procedure",
+            "create a new procedure",
             "new procedure",
-            "define",
+            "define procedure",
+            "define a new procedure",
             "add procedure",
             "store procedure",
-            "update",
-            "modify",
-            "change",
-            "refine",
-            "adjust",
-            "improve",
+            "update procedure",
+            "modify procedure",
+            "change procedure",
+            "refine procedure",
+            "improve procedure",
+        ]
+        if any(marker in normalized for marker in explicit_procedure_markers):
+            return True
+
+        direct_update_verbs = ("update ", "modify ", "change ", "refine ", "improve ")
+        if normalized.startswith(direct_update_verbs):
+            return bool(self._infer_target_procedure(user_query))
+
+        procedure_edit_markers = [
             "also include",
-            "include ",
             "exclude",
             "remove",
             "replace",
@@ -208,8 +217,9 @@ class ProceduralMemory:
             "should calculate",
             "should compute",
         ]
-        if any(marker in normalized for marker in update_markers):
-            return bool(self._infer_target_procedure(user_query) or "procedure" in normalized)
+        if "procedure" in normalized and any(marker in normalized for marker in procedure_edit_markers):
+            return True
+
         return False
 
     @staticmethod

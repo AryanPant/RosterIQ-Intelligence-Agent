@@ -85,9 +85,10 @@ class ReportGenerator:
         if web_context:
             lines.extend(["", "## External Context"])
             for item in web_context:
+                detail = item.get("search_answer") or item.get("snippet", "")
                 lines.append(
-                    f"- [{item.get('category', 'external_context')}] {item.get('title', 'Untitled')}: "
-                    f"{item.get('snippet', '')} ({item.get('url', '')})"
+                    f"- [{item.get('category', 'external_context')}] {item.get('purpose', item.get('title', 'Untitled'))}: "
+                    f"{detail} ({item.get('url', '')})"
                 )
 
         return "\n".join(lines).strip()

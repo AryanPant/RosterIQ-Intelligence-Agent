@@ -2,136 +2,28 @@ import os
 import sys
 import time
 
-import pandas as pd
 import streamlit as st
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from graph.agent_graph import build_graph
-from memory.semantic_memory import SemanticMemory
-from tools.data_query_tool import DataQueryTool
 
-st.set_page_config(page_title="RosterIQ Intelligence Agent", layout="wide")
-st.title("RosterIQ Intelligence Agent")
-st.caption("Memory-driven provider roster diagnostics for pipeline health and root-cause analysis.")
-
-
-def _advance_progress(progress_bar, start, end, label, step_delay=0.04):
-
-    for value in range(start, end + 1, 5):
-        progress_bar.progress(min(value, 100), text=label)
-        time.sleep(step_delay)
-
-
-@st.cache_resource
-def _get_data_tool():
-
-    return DataQueryTool()
+PAGE_TITLE = "RosterIQ Intelligence Agent"
+CHAT_PROMPT = "Ask about market health, stuck rosters, or failure trends"
+STARTER_PROMPTS = [
+    "Why CA success rate is dropping?",
+    "Show the biggest failure trends in TX.",
+    "Give me a full operational report for FL.",
+]
+STARTUP_STEPS = [
+    ("Preparing workspace", "Wiring up the page shell and session state.", 20),
+    ("Loading agent graph", "Building the investigation graph and its dependencies.", 68),
+    ("Restoring session", "Recovering your chat history for this browser session.", 88),
+    ("Finalizing", "Making the workspace ready for investigation.", 100),
+]
 
 
-@st.cache_resource
-def _get_semantic_memory():
-
-    return SemanticMemory()
-
-
-def _render_sidebar():
-
-    st.sidebar.header("Demo Prompts")
-    prompt_options = [
-        "Show stuck ROs in CA with a chart",
-        "Run market health report for TX",
-        "Have we investigated CA rejection issues before?",
-        "Update record_quality_audit to include SKIP_REC_CNT",
-        "Give me a full operational report for KS",
-    ]
-    for prompt in prompt_options:
-        if st.sidebar.button(prompt, use_container_width=True):
-            st.session_state.pending_query = prompt
-
-    st.sidebar.divider()
-    st.sidebar.header("System Status")
-    llm_ready = "Yes" if os.getenv("OPENROUTER_API_KEY") else "No"
-    web_ready = "Yes" if os.getenv("TAVILY_API_KEY") else "Fallback only"
-    st.sidebar.caption(f"LLM enabled: {llm_ready}")
-    st.sidebar.caption(f"Web search live: {web_ready}")
-    st.sidebar.caption("Memory: episodic + procedural + semantic")
-
-
-def _render_kpis():
-
-    data = _get_data_tool()
-    pipeline = data.pipeline.copy()
-    market = data.market.copy()
-
-    stuck_count = int(pd.to_numeric(pipeline.get("IS_STUCK", 0), errors="coerce").fillna(0).astype(int).sum())
-    failed_count = int(pd.to_numeric(pipeline.get("IS_FAILED", 0), errors="coerce").fillna(0).astype(int).sum())
-
-    market["SCS_PERCENT"] = pd.to_numeric(market["SCS_PERCENT"], errors="coerce")
-    latest_market = market.sort_values("SCS_PERCENT", ascending=True).iloc[0] if not market.empty else None
-    latest_month_row = market.iloc[-1] if not market.empty else None
-
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Stuck ROs", stuck_count)
-    col2.metric("Failed ROs", failed_count)
-    col3.metric(
-        "Latest Success Rate",
-        f"{float(latest_month_row['SCS_PERCENT']):.2f}%" if latest_month_row is not None else "N/A",
-        latest_month_row["MARKET"] if latest_month_row is not None else None,
-    )
-    col4.metric(
-        "Worst Market Snapshot",
-        f"{float(latest_market['SCS_PERCENT']):.2f}%" if latest_market is not None else "N/A",
-        latest_market["MARKET"] if latest_market is not None else None,
-    )
-
-
-def _render_memory_panel(result):
-
-    if not result:
-        st.info("Memory and reasoning details will appear here after the first investigation.")
-        return
-
-    brief = result.get("investigation_brief", {})
-    history = result.get("history", []) or []
-    procedure_names = result.get("plan", []) or []
-    semantic_memory = _get_semantic_memory()
-    semantic_hits = semantic_memory.query_hybrid(result.get("query", ""), alpha=0.5, limit=3)
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("**Episodic Memory**")
-        if history:
-            latest = history[0]
-            st.caption(f"Matched {len(history)} past investigation(s)")
-            st.write(f"{latest.get('timestamp', 'Unknown time')}")
-            st.write(latest.get("metadata", {}).get("investigation_summary") or latest.get("response", ""))
-        else:
-            st.caption("No prior investigation recalled")
-
-    with col2:
-        st.markdown("**Procedural Memory**")
-        if procedure_names:
-            for item in procedure_names[:3]:
-                st.write(f"- `{item}`")
-        else:
-            st.caption("No named procedure executed")
-        if brief.get("is_procedure_update"):
-            st.caption("Procedure update applied in this turn")
-
-    with col3:
-        st.markdown("**Semantic Memory**")
-        if semantic_hits:
-            for item in semantic_hits[:3]:
-                if isinstance(item, dict):
-                    st.write(f"- `{item.get('name', 'unknown')}`")
-                else:
-                    st.write(f"- `{str(item)}`")
-        else:
-            st.caption("No semantic concept recall available")
-
-
-def _initial_state(query):
+def default_query_state(query):
 
     return {
         "query": query,
@@ -149,108 +41,305 @@ def _initial_state(query):
     }
 
 
-def _initialize_graph_with_progress():
+def render_assistant_details(message):
 
-    status_placeholder = st.empty()
-    progress_placeholder = st.empty()
-    status = status_placeholder.status("Initializing RosterIQ...", expanded=True)
-    progress = progress_placeholder.progress(0, text="Booting the interface")
+    if message.get("runtime_seconds") is not None:
+        st.caption(f"Completed in {message['runtime_seconds']:.1f}s")
 
-    _advance_progress(progress, 0, 20, "Loading agent workflow")
-    status.write("Building the multi-agent investigation graph.")
+    if message.get("llm_status"):
+        st.caption(f"LLM status: {message['llm_status']}")
 
-    _advance_progress(progress, 25, 55, "Preparing memory and analytics components")
-    status.write("Initializing memory stores, tools, and routing logic.")
-    graph = build_graph()
-    st.session_state.graph = graph
+    visualizations = message.get("visualizations") or {}
+    if visualizations:
+        chart_items = list(visualizations.items())
+        for start in range(0, len(chart_items), 2):
+            col1, col2 = st.columns(2)
+            left = chart_items[start]
+            with col1:
+                st.plotly_chart(left[1], use_container_width=True)
+            if start + 1 < len(chart_items):
+                right = chart_items[start + 1]
+                with col2:
+                    st.plotly_chart(right[1], use_container_width=True)
 
-    _advance_progress(progress, 60, 85, "Warming up the chat workspace")
-    status.write("Memory stores, procedures, and analysis tools are ready.")
+    if message.get("web_context"):
+        with st.expander("External context"):
+            for item in message["web_context"]:
+                st.markdown(f"**{item.get('purpose', item.get('title', 'External context'))}**")
+                st.markdown(item.get("search_answer") or item.get("snippet", ""))
+                if item.get("url"):
+                    st.markdown(item["url"])
 
-    _advance_progress(progress, 90, 100, "RosterIQ is ready", step_delay=0.03)
-    status.update(label="RosterIQ ready", state="complete", expanded=False)
-    progress_placeholder.empty()
-    status_placeholder.empty()
+    if message.get("report"):
+        with st.expander("Structured report"):
+            st.markdown(message["report"])
 
-if "graph" not in st.session_state:
-    _initialize_graph_with_progress()
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "pending_query" not in st.session_state:
-    st.session_state.pending_query = None
-if "last_result" not in st.session_state:
-    st.session_state.last_result = None
+def render_message(message):
 
-_render_sidebar()
-_render_kpis()
-st.divider()
-st.subheader("Memory View")
-_render_memory_panel(st.session_state.last_result)
-st.divider()
-
-for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-query = st.chat_input("Ask about market health, stuck rosters, or failure trends")
-if not query and st.session_state.pending_query:
-    query = st.session_state.pending_query
-    st.session_state.pending_query = None
+        if message["role"] != "assistant":
+            return
+
+        render_assistant_details(message)
+
+
+def render_sidebar():
+
+    queued_query = None
+    with st.sidebar:
+        st.subheader("Session")
+        st.caption("Use a starter prompt, then let the agent investigate the pipeline for you.")
+
+        if st.button("Clear conversation", use_container_width=True):
+            st.session_state.messages = []
+
+        st.markdown("**Starter prompts**")
+        for index, prompt in enumerate(STARTER_PROMPTS):
+            if st.button(prompt, key=f"starter_prompt_{index}", use_container_width=True):
+                queued_query = prompt
+
+        st.markdown("---")
+        st.caption(f"{len(st.session_state.messages)} messages in this session")
+
+    return queued_query
+
+
+def invoke_graph(query):
+
+    return st.session_state.graph.invoke(default_query_state(query))
+
+
+def build_assistant_message(result, runtime_seconds):
+
+    return {
+        "role": "assistant",
+        "content": result.get("response") or result.get("report") or "No response generated.",
+        "llm_status": result.get("llm_status"),
+        "visualizations": result.get("visualizations") or {},
+        "web_context": result.get("web_context") or [],
+        "report": result.get("report") or "",
+        "runtime_seconds": runtime_seconds,
+    }
+
+
+def render_loading_status():
+
+    if hasattr(st, "status"):
+        status = st.status("Investigating your request...", expanded=True)
+        status.write("Reviewing prior memory and market context.")
+        status.write("Running diagnostics and collecting evidence.")
+        status.write("Preparing the answer, report, and any charts.")
+        return status
+
+    return None
+
+
+def advance_progress(progress_bar, current_value, target_value, label):
+
+    if target_value <= current_value:
+        return current_value
+
+    for value in range(current_value + 1, target_value + 1):
+        progress_bar.progress(value, text=label)
+        time.sleep(0.01)
+
+    return target_value
+
+
+def update_startup_status(status_box, status_placeholder, label, description, state="running"):
+
+    if status_box is not None:
+        if state == "running":
+            status_box.write(f"**{label}**")
+            status_box.write(description)
+        else:
+            status_box.update(label=label, state=state, expanded=state != "complete")
+        return
+
+    if status_placeholder is None:
+        return
+
+    message = f"**{label}**\n\n{description}" if description else label
+    if state == "complete":
+        status_placeholder.success(message)
+    elif state == "error":
+        status_placeholder.error(message)
+    else:
+        status_placeholder.info(message)
+
+
+def initialize_app():
+
+    needs_startup = (
+        not st.session_state.get("startup_complete", False)
+        or "graph" not in st.session_state
+        or "messages" not in st.session_state
+    )
+    if not needs_startup:
+        return
+
+    loading_shell = st.empty()
+    status_box = None
+    status_placeholder = None
+    progress_value = 0
+
+    with loading_shell.container():
+        st.info("Preparing the RosterIQ workspace. The chat will appear as soon as startup completes.")
+        if hasattr(st, "status"):
+            status_box = st.status("Starting RosterIQ...", expanded=True)
+        else:
+            status_placeholder = st.empty()
+        progress_bar = st.progress(0, text="Starting RosterIQ...")
+
+        try:
+            update_startup_status(
+                status_box,
+                status_placeholder,
+                "Step 1 of 4: Preparing workspace",
+                STARTUP_STEPS[0][1],
+            )
+            progress_value = advance_progress(
+                progress_bar,
+                progress_value,
+                STARTUP_STEPS[0][2],
+                "Step 1 of 4: Preparing workspace",
+            )
+
+            if "messages" not in st.session_state:
+                st.session_state.messages = []
+
+            update_startup_status(
+                status_box,
+                status_placeholder,
+                "Step 2 of 4: Loading agent graph",
+                STARTUP_STEPS[1][1],
+            )
+            progress_value = advance_progress(
+                progress_bar,
+                progress_value,
+                STARTUP_STEPS[1][2] - 12,
+                "Step 2 of 4: Loading agent graph",
+            )
+            if "graph" not in st.session_state:
+                st.session_state.graph = build_graph()
+            progress_value = advance_progress(
+                progress_bar,
+                progress_value,
+                STARTUP_STEPS[1][2],
+                "Step 2 of 4: Loading agent graph",
+            )
+
+            update_startup_status(
+                status_box,
+                status_placeholder,
+                "Step 3 of 4: Restoring session",
+                STARTUP_STEPS[2][1],
+            )
+            progress_value = advance_progress(
+                progress_bar,
+                progress_value,
+                STARTUP_STEPS[2][2],
+                "Step 3 of 4: Restoring session",
+            )
+
+            update_startup_status(
+                status_box,
+                status_placeholder,
+                "Step 4 of 4: Finalizing",
+                STARTUP_STEPS[3][1],
+            )
+            progress_value = advance_progress(
+                progress_bar,
+                progress_value,
+                STARTUP_STEPS[3][2],
+                "Step 4 of 4: Finalizing",
+            )
+        except Exception:
+            update_startup_status(
+                status_box,
+                status_placeholder,
+                "Startup failed",
+                "RosterIQ could not finish initialization.",
+                state="error",
+            )
+            raise
+
+        update_startup_status(
+            status_box,
+            status_placeholder,
+            "RosterIQ is ready",
+            "Initialization complete. Launching the chat workspace.",
+            state="complete",
+        )
+        time.sleep(0.2)
+
+    loading_shell.empty()
+    st.session_state.startup_complete = True
+
+
+st.set_page_config(page_title="RosterIQ Intelligence Agent", layout="wide")
+st.title(PAGE_TITLE)
+st.caption("Memory-driven provider roster diagnostics for pipeline health and root-cause analysis.")
+
+initialize_app()
+
+starter_query = render_sidebar()
+
+for message in st.session_state.messages:
+    render_message(message)
+
+if not st.session_state.messages:
+    st.info("Start with a question in the chat box or use one of the starter prompts in the sidebar.")
+
+typed_query = st.chat_input(CHAT_PROMPT)
+query = starter_query or typed_query
 
 if query:
     st.session_state.messages.append({"role": "user", "content": query})
 
-    with st.chat_message("user"):
-        st.markdown(query)
-
-    result = st.session_state.graph.invoke(_initial_state(query))
-    st.session_state.last_result = result
+    render_message({"role": "user", "content": query})
 
     with st.chat_message("assistant"):
-        if result.get("llm_status"):
-            st.caption(f"LLM status: {result['llm_status']}")
-        st.markdown(result["response"])
-        if result.get("visualizations"):
-            chart_items = list(result["visualizations"].items())
-            for start in range(0, len(chart_items), 2):
-                col1, col2 = st.columns(2)
-                left = chart_items[start]
-                with col1:
-                    st.plotly_chart(left[1], use_container_width=True)
-                if start + 1 < len(chart_items):
-                    right = chart_items[start + 1]
-                    with col2:
-                        st.plotly_chart(right[1], use_container_width=True)
+        start_time = time.perf_counter()
+        status = render_loading_status()
 
-        if result.get("web_context"):
-            with st.expander("External context"):
-                for item in result["web_context"]:
-                    st.markdown(f"**{item['title']}**")
-                    st.markdown(item["snippet"])
-                    st.markdown(item["url"])
+        try:
+            if status is None:
+                with st.spinner("Investigating roster memory, pipeline evidence, and report output..."):
+                    result = invoke_graph(query)
+            else:
+                result = invoke_graph(query)
+        except Exception as exc:
+            if status is not None:
+                status.update(label="Analysis failed", state="error", expanded=True)
 
-        if result.get("report"):
-            with st.expander("Structured report"):
-                st.markdown(result["report"])
+            assistant_message = {
+                "role": "assistant",
+                "content": (
+                    "I hit an error while generating the response.\n\n"
+                    f"`{type(exc).__name__}: {exc}`"
+                ),
+                "llm_status": "error",
+                "visualizations": {},
+                "web_context": [],
+                "report": "",
+                "runtime_seconds": time.perf_counter() - start_time,
+            }
+        else:
+            runtime_seconds = time.perf_counter() - start_time
+            if status is not None:
+                status.update(
+                    label=f"Analysis complete in {runtime_seconds:.1f}s",
+                    state="complete",
+                    expanded=False,
+                )
 
-        with st.expander("Memory usage"):
-            _render_memory_panel(result)
+            assistant_message = build_assistant_message(result, runtime_seconds)
 
-        with st.expander("Investigation details"):
-            st.markdown(f"**Detected market:** {result.get('market') or 'Not inferred'}")
-            brief = result.get("investigation_brief", {})
-            if brief:
-                st.markdown(f"**Detected intents:** {', '.join(brief.get('intents', [])) or 'None'}")
-                st.markdown(f"**Requested chart types:** {', '.join(brief.get('chart_preferences', [])) or 'None'}")
-            st.markdown(f"**LLM status:** {result.get('llm_status') or 'Unknown'}")
-            st.markdown(f"**Plan:** {', '.join(result.get('plan', [])) or 'None'}")
-            st.markdown("**Evidence**")
-            for item in result.get("evidence", []):
-                st.markdown(f"- {item}")
-            if result.get("history"):
-                st.markdown("**Related past investigations**")
-                for entry in result["history"]:
-                    st.markdown(f"- {entry['timestamp']}: {entry['response']}")
+        st.markdown(assistant_message["content"])
+        render_assistant_details(assistant_message)
 
-    st.session_state.messages.append({"role": "assistant", "content": result["response"]})
+    st.session_state.messages.append(assistant_message)

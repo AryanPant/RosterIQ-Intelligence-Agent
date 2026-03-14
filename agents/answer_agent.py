@@ -437,9 +437,10 @@ Answer in 1 short sentence.
 
         lines = []
         for item in (items or [])[:limit]:
+            detail = item.get("search_answer") or item.get("snippet", "")
             lines.append(
-                f"- [{item.get('category', 'external_context')}] {item.get('title', 'Untitled')} :: "
-                f"{item.get('snippet', '')} ({item.get('url', '')})"
+                f"- [{item.get('category', 'external_context')}] {item.get('purpose', item.get('title', 'Untitled'))} :: "
+                f"{detail} ({item.get('url', '')})"
             )
         return "\n".join(lines)
 
@@ -463,22 +464,121 @@ Answer in 1 short sentence.
             lines.append(f"- combined_keywords: {', '.join(scope['query_keywords'])}")
         return "\n".join(lines) or "None"
 
+    @staticmethod
+    def _should_include_episodic_context(brief, history):
+
+        return bool(brief.get("is_memory_query") and history)
+
+    @staticmethod
+    def _should_suppress_audit_metrics(brief, query):
+
+        scope = brief.get("query_scope", {}) if brief else {}
+        if not scope.get("org_name"):
+            return False
+        if "external_context" not in set(brief.get("intents", [])):
+            return False
+
+        normalized = (query or "").lower()
+        is_org_context_query = any(
+            phrase in normalized
+            for phrase in [
+                "business context",
+                "organization context",
+                "org context",
+                "background",
+                "who is",
+                "look up",
+                "lookup",
+                "research",
+            ]
+        )
+        explicit_quality_request = any(
+            token in normalized
+            for token in [
+                "quality",
+                "record quality",
+                "reject",
+                "rejection",
+                "failure",
+                "validation",
+                "audit",
+                "skip",
+                "scs_pct",
+                "threshold",
+            ]
+        )
+        return is_org_context_query and not explicit_quality_request
+
+    def _filter_evidence_for_prompt(self, state):
+
+        evidence_items = list(state.get("evidence", []))
+        brief = state.get("investigation_brief", {})
+        if not self._should_suppress_audit_metrics(brief, state.get("query")):
+            return evidence_items
+
+        filtered = []
+        for item in evidence_items:
+            normalized = str(item or "").lower()
+            if "record-quality issue rate" in normalized:
+                continue
+            if "scs_pct threshold" in normalized:
+                continue
+            filtered.append(item)
+        return filtered
+
+    def _build_focus_instruction(self, state):
+
+        brief = state.get("investigation_brief", {})
+        if self._should_suppress_audit_metrics(brief, state.get("query")):
+            return (
+                "Focus on organization background and the most relevant high-level anomaly signals. "
+                "Do not mention record-quality issue rate formulas, audit thresholds, or file-count audit summaries "
+                "unless the user explicitly asks for quality metrics."
+            )
+
+        if brief.get("is_memory_query"):
+            return "Use episodic memory because the user is explicitly asking about prior investigations."
+
+        return "Do not mention episodic memory unless the user explicitly asks about prior investigations."
+
+    @staticmethod
+    def _format_web_details_for_response(items, limit=4):
+
+        if not items:
+            return ""
+
+        category_labels = {
+            "regulatory_change": "Regulatory context",
+            "compliance_standard": "Compliance context",
+            "lob_policy": "LOB policy context",
+            "org_context": "Organization context",
+        }
+        lines = ["", "", "**Web Search Details**"]
+        seen_categories = set()
+        for item in items:
+            category = item.get("category", "external_context")
+            if category in seen_categories:
+                continue
+            seen_categories.add(category)
+            detail = item.get("search_answer") or item.get("snippet", "")
+            source = item.get("url") or "Tavily summary"
+            lines.append(
+                f"- {category_labels.get(category, category.replace('_', ' ').title())}: "
+                f"{detail} Source: {source}"
+            )
+            if len(seen_categories) >= limit:
+                break
+        return "\n".join(lines)
+
     def _augment_response_with_web_context(self, response, web_context):
 
         if not web_context:
             return response
 
-        highlights = []
-        for item in web_context[:3]:
-            highlights.append(
-                f"{item.get('category', 'external_context')}: {item.get('title', 'Untitled')} "
-                f"({item.get('url', '')})"
-            )
-
-        external_block = " External context highlights: " + "; ".join(highlights) + "."
-        if external_block.strip() in (response or ""):
+        detail_block = self._format_web_details_for_response(web_context)
+        if detail_block.strip() in (response or ""):
             return response
-        return (response or "").rstrip() + external_block
+        return (response or "").rstrip() + detail_block
 
     def run(self, state):
 
@@ -509,9 +609,13 @@ Answer in 1 short sentence.
             web_context = self.web.search_external_context(state, max_results_per_query=2)
         state["web_context"] = web_context
 
-        evidence = "\n".join(f"- {item}" for item in state["evidence"])
+        filtered_evidence = self._filter_evidence_for_prompt(state)
+        evidence = "\n".join(f"- {item}" for item in filtered_evidence)
         root_cause = state.get("root_cause", {})
-        episodic_context = self.memory.format_for_prompt(state.get("history", []), limit=3)
+        if self._should_include_episodic_context(brief, state.get("history", [])):
+            episodic_context = self.memory.format_for_prompt(state.get("history", []), limit=3)
+        else:
+            episodic_context = ""
         semantic_context = self.semantic_memory.semantic_recall(state["query"], alpha=0.5, limit=6)
         procedure_context = "\n".join(
             f"{name}: {self.procedures.get(name).get('description', '')}"
@@ -542,6 +646,7 @@ EXTERNAL CONTEXT:
 {self._format_web_context(web_context) or 'None'}
 
 If external context is present and relevant, explicitly incorporate it into the answer.
+{self._build_focus_instruction(state)}
 """.strip()
 
         prompt = f"""

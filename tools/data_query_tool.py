@@ -158,6 +158,66 @@ class DataQueryTool:
                 continue
             if self._contains_phrase(normalized, normalized_org):
                 return self.org_name_lookup[normalized_org]
+
+        stopwords = {
+            "who",
+            "is",
+            "look",
+            "up",
+            "lookup",
+            "research",
+            "about",
+            "this",
+            "that",
+            "the",
+            "to",
+            "add",
+            "business",
+            "context",
+            "organization",
+            "org",
+            "pipeline",
+            "anomaly",
+            "anomalies",
+            "market",
+            "state",
+            "general",
+            "problem",
+            "problems",
+        }
+        filtered_tokens = [token for token in normalized.split() if token not in stopwords]
+        if any(
+            phrase in normalized
+            for phrase in ["all states", "across all states", "all markets", "across markets", "overall pipeline"]
+        ):
+            return None
+
+        context_cues = {"who", "lookup", "look", "research", "background", "context"}
+        org_name_markers = {
+            "medical",
+            "group",
+            "foundation",
+            "physicians",
+            "physician",
+            "hospital",
+            "clinic",
+            "system",
+            "associates",
+            "care",
+        }
+        has_context_cue = any(token in context_cues for token in normalized.split())
+        org_marker_count = sum(1 for token in filtered_tokens if token in org_name_markers)
+        if not has_context_cue and org_marker_count < 2:
+            return None
+
+        for window_size in range(min(5, len(filtered_tokens)), 1, -1):
+            for start in range(0, len(filtered_tokens) - window_size + 1):
+                phrase = " ".join(filtered_tokens[start : start + window_size]).strip()
+                if len(phrase) < 8:
+                    continue
+                for normalized_org in self.org_name_candidates:
+                    if phrase in normalized_org:
+                        return self.org_name_lookup[normalized_org]
         return None
 
     @staticmethod
@@ -283,6 +343,11 @@ class DataQueryTool:
             "payer",
             "compliance",
             "provider directory",
+            "provider roster",
+            "roster compliance",
+            "network adequacy",
+            "submission requirement",
+            "submission requirements",
             "data standard",
             "validation",
             "complete validation failure",

@@ -33,6 +33,140 @@ class SupervisorAgent:
             return default
         return bool(value)
 
+    @staticmethod
+    def _should_request_external_context(normalized_query, scope):
+
+        external_context_patterns = [
+            "cms",
+            "medicaid",
+            "medicare",
+            "compliance",
+            "regulation",
+            "regulatory",
+            "policy",
+            "payer",
+            "validation",
+            "complete validation failure",
+            "data standard",
+            "provider directory",
+            "provider roster",
+            "roster compliance",
+            "submission requirement",
+            "submission requirements",
+            "external context",
+            "business context",
+        ]
+        rejection_spike_signal = (
+            bool(scope.get("market"))
+            and any(token in normalized_query for token in ["spike", "surge", "jump", "drop", "decline"])
+            and any(token in normalized_query for token in ["reject", "rejection", "failure", "validation"])
+        )
+        org_context_signal = scope.get("org_name") and any(
+            token in normalized_query
+            for token in ["context", "background", "who is", "look up", "research", "anomaly", "failure", "pipeline", "spike", "stuck"]
+        )
+        return any(token in normalized_query for token in external_context_patterns) or rejection_spike_signal or org_context_signal
+
+    @staticmethod
+    def _is_org_business_context_query(normalized_query, scope):
+
+        if not scope.get("org_name"):
+            return False
+
+        return any(
+            phrase in normalized_query
+            for phrase in [
+                "business context",
+                "organization context",
+                "org context",
+                "background",
+                "who is",
+                "look up",
+                "lookup",
+                "research",
+            ]
+        )
+
+    @staticmethod
+    def _has_explicit_quality_request(normalized_query):
+
+        return any(
+            token in normalized_query
+            for token in [
+                "quality",
+                "record quality",
+                "reject",
+                "rejection",
+                "failure",
+                "validation",
+                "audit",
+                "skip",
+                "scs_pct",
+                "threshold",
+            ]
+        )
+
+    @staticmethod
+    def _should_show_default_visualizations(normalized_query, scope):
+
+        if scope.get("requested_charts"):
+            return True
+        if scope.get("is_full_operational_report"):
+            return False
+        if scope.get("market"):
+            return True
+        if scope.get("org_name"):
+            return False
+
+        context_only_markers = [
+            "business context",
+            "organization context",
+            "org context",
+            "background",
+            "who is",
+            "look up",
+            "lookup",
+            "research",
+            "external context",
+        ]
+        if any(marker in normalized_query for marker in context_only_markers):
+            return False
+
+        all_state_markers = [
+            "all states",
+            "across all states",
+            "all markets",
+            "across markets",
+            "overall",
+            "portfolio",
+            "system wide",
+            "system-wide",
+            "enterprise",
+            "nationwide",
+        ]
+        analytic_markers = [
+            "pipeline",
+            "health",
+            "stage",
+            "stuck",
+            "delay",
+            "blocked",
+            "rejection",
+            "reject",
+            "quality",
+            "failure",
+            "trend",
+            "rate",
+            "success",
+            "anomaly",
+            "anomalies",
+            "duration",
+            "outlier",
+        ]
+        return any(marker in normalized_query for marker in all_state_markers) or any(
+            marker in normalized_query for marker in analytic_markers
+        )
+
     def _fallback_brief(self, query, market):
 
         normalized = (query or "").lower()
@@ -63,21 +197,6 @@ class SupervisorAgent:
             "across runs",
             "show me the history",
             "trend over time",
-        ]
-        external_context_patterns = [
-            "cms",
-            "medicaid",
-            "medicare",
-            "compliance",
-            "regulation",
-            "regulatory",
-            "policy",
-            "payer",
-            "validation",
-            "complete validation failure",
-            "data standard",
-            "external context",
-            "business context",
         ]
 
         if is_procedure_update:
@@ -144,13 +263,7 @@ class SupervisorAgent:
             intents.append("root_cause_analysis")
             topics.append("root_cause")
 
-        if not is_procedure_update and not is_procedure_execution and (
-            any(token in normalized for token in external_context_patterns)
-            or (
-                scope.get("org_name")
-                and any(token in normalized for token in ["context", "background", "who is", "anomaly", "failure", "pipeline"])
-            )
-        ):
+        if not is_procedure_update and not is_procedure_execution and self._should_request_external_context(normalized, scope):
             intents.append("external_context")
             topics.append("compliance")
             tool_requests.append("web_search")
@@ -165,7 +278,12 @@ class SupervisorAgent:
             desired_outputs.append("report")
             topics.append("operational_report")
 
-        if not intents and not is_procedure_update and not is_procedure_execution:
+        if (
+            not intents
+            and not is_procedure_update
+            and not is_procedure_execution
+            and self._should_show_default_visualizations(normalized, scope)
+        ):
             intents = ["trend_analysis", "pipeline_diagnostics", "record_quality"]
             topics.extend(["market_performance", "pipeline", "quality"])
             if not chart_preferences and not scope.get("is_full_operational_report"):
@@ -336,25 +454,8 @@ Detected market: {market or "unknown"}
         brief["query_scope"] = scope
         brief["chart_preferences"] = scope["requested_charts"] or fallback["chart_preferences"]
         brief["market"] = scope.get("market") or market
-        external_context_patterns = [
-            "cms",
-            "medicaid",
-            "medicare",
-            "compliance",
-            "regulation",
-            "regulatory",
-            "policy",
-            "payer",
-            "validation",
-            "complete validation failure",
-            "data standard",
-            "external context",
-            "business context",
-        ]
         normalized = (query or "").lower()
-        if any(token in normalized for token in external_context_patterns) or (
-            scope.get("org_name") and any(token in normalized for token in ["context", "background", "who is", "anomaly", "failure", "pipeline"])
-        ):
+        if self._should_request_external_context(normalized, scope):
             if "web_search" not in brief["tool_requests"]:
                 brief["tool_requests"].append("web_search")
             if "external_context" not in brief["desired_outputs"]:
@@ -363,6 +464,14 @@ Detected market: {market or "unknown"}
                 brief["intents"].append("external_context")
             if "compliance" not in brief["topics"]:
                 brief["topics"].append("compliance")
+
+        if self._is_org_business_context_query(normalized, scope) and not self._has_explicit_quality_request(normalized):
+            brief["intents"] = [item for item in brief["intents"] if item != "record_quality"]
+            brief["chart_preferences"] = [
+                item for item in brief["chart_preferences"] if item != "record_quality_breakdown"
+            ]
+        if not self._should_show_default_visualizations(normalized, scope):
+            brief["chart_preferences"] = scope["requested_charts"]
         if scope.get("is_full_operational_report") and not brief["is_procedure_update"] and not brief["is_procedure_execution"]:
             if "report_generator" not in brief["tool_requests"]:
                 brief["tool_requests"].append("report_generator")

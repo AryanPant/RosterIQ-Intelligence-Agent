@@ -195,7 +195,10 @@ def render_text_output(result: dict, chart_paths: dict[str, str]) -> str:
     if result.get("web_context"):
         chunks.append("## External Context")
         for item in result["web_context"]:
-            chunks.append(f"- {item.get('title')}: {item.get('url')}")
+            detail = item.get("search_answer") or item.get("snippet", "")
+            chunks.append(
+                f"- {item.get('purpose', item.get('title'))}: {detail} ({item.get('url') or 'Tavily summary'})"
+            )
 
     return "\n".join(chunks).strip()
 
