@@ -221,20 +221,46 @@ class WebSearchTool:
             return []
 
         try:
-            from tavily import TavilyClient
+            response = None
+            try:
+                from tavily import TavilyClient
+            except ImportError:
+                TavilyClient = None
 
-            client = TavilyClient(api_key=self.api_key)
-            response = client.search(
-                query=search_item["query"],
-                max_results=max_results,
-                include_domains=search_item.get("domains") or None,
-                search_depth=search_item.get("search_depth", "advanced"),
-                topic=search_item.get("topic", "general"),
-                time_range=search_item.get("time_range"),
-                include_answer="basic",
-                auto_parameters=False,
-                timeout=45,
-            )
+            if TavilyClient is not None:
+                client = TavilyClient(api_key=self.api_key)
+                response = client.search(
+                    query=search_item["query"],
+                    max_results=max_results,
+                    include_domains=search_item.get("domains") or None,
+                    search_depth=search_item.get("search_depth", "advanced"),
+                    topic=search_item.get("topic", "general"),
+                    time_range=search_item.get("time_range"),
+                    include_answer="basic",
+                    auto_parameters=False,
+                    timeout=45,
+                )
+            else:
+                import requests
+
+                http_response = requests.post(
+                    "https://api.tavily.com/search",
+                    json={
+                        "api_key": self.api_key,
+                        "query": search_item["query"],
+                        "max_results": max_results,
+                        "include_domains": search_item.get("domains") or None,
+                        "search_depth": search_item.get("search_depth", "advanced"),
+                        "topic": search_item.get("topic", "general"),
+                        "time_range": search_item.get("time_range"),
+                        "include_answer": "basic",
+                        "auto_parameters": False,
+                    },
+                    timeout=45,
+                )
+                http_response.raise_for_status()
+                response = http_response.json()
+
             answer = self._truncate_snippet(response.get("answer", ""))
             rows = []
             for item in response.get("results", []):

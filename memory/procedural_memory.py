@@ -221,7 +221,11 @@ class ProceduralMemory:
             "should compute",
         ]
         has_edit_action = re.search(r"\b(add|include|exclude|remove|replace)\b", normalized) is not None
-        if inferred_target and (has_edit_action or any(marker in normalized for marker in procedure_edit_markers)):
+        normalized_target = inferred_target.replace("_", " ").lower() if inferred_target else ""
+        explicit_target_reference = bool(normalized_target and normalized_target in normalized)
+        if inferred_target and explicit_target_reference and (
+            has_edit_action or any(marker in normalized for marker in procedure_edit_markers)
+        ):
             return True
 
         if "procedure" in normalized and any(marker in normalized for marker in procedure_edit_markers):
