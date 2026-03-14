@@ -185,6 +185,7 @@ class ProceduralMemory:
 
         self.reload()
         normalized = (user_query or "").lower()
+        inferred_target = self._infer_target_procedure(user_query)
         explicit_procedure_markers = [
             "create procedure",
             "create a new procedure",
@@ -204,10 +205,12 @@ class ProceduralMemory:
 
         direct_update_verbs = ("update ", "modify ", "change ", "refine ", "improve ")
         if normalized.startswith(direct_update_verbs):
-            return bool(self._infer_target_procedure(user_query))
+            return bool(inferred_target)
 
         procedure_edit_markers = [
             "also include",
+            "include",
+            "also add",
             "exclude",
             "remove",
             "replace",
@@ -217,6 +220,10 @@ class ProceduralMemory:
             "should calculate",
             "should compute",
         ]
+        has_edit_action = re.search(r"\b(add|include|exclude|remove|replace)\b", normalized) is not None
+        if inferred_target and (has_edit_action or any(marker in normalized for marker in procedure_edit_markers)):
+            return True
+
         if "procedure" in normalized and any(marker in normalized for marker in procedure_edit_markers):
             return True
 
