@@ -1,0 +1,9 @@
+llm:
+  model: openrouter/free
+  max_tokens: 1200
+
+analysis:
+  rejection_threshold: 0.30
+
+monitoring:
+  interval_minutes: 5

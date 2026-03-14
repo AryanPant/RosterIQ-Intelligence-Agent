@@ -1,0 +1,12 @@
+streamlit
+pandas
+numpy
+plotly
+sentence-transformers
+faiss-cpu
+langgraph
+tavily-python
+python-dotenv
+pyyaml
+schedule
+requests

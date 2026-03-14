@@ -1,0 +1,404 @@
+[
+  {
+    "category": "term",
+    "name": "RO_ID",
+    "chunk": "TERM: RO_ID\nDESCRIPTION: Unique Roster Operation identifier for a single file/job execution. Format: RO-XXXXXXX. Each row in roster_processing_details.csv represents one RO moving through the pipeline.",
+    "description": "Unique Roster Operation identifier for a single file/job execution. Format: RO-XXXXXXX. Each row in roster_processing_details.csv represents one RO moving through the pipeline."
+  },
+  {
+    "category": "term",
+    "name": "FILE_STATUS_CD",
+    "chunk": "TERM: FILE_STATUS_CD\nDESCRIPTION: Numeric pipeline status code. Key values: 9=STOPPED (pipeline halted, needs intervention), 45=DART_REVIEW (awaiting manual DART review), 49=DART_GENERATION (DART being generated), 99=RESOLVED (successfully completed). Other codes (10,15,23,25,27,28,29,39,43,46,47,48,55,59,65) represent intermediate or transitional states.",
+    "description": "Numeric pipeline status code. Key values: 9=STOPPED (pipeline halted, needs intervention), 45=DART_REVIEW (awaiting manual DART review), 49=DART_GENERATION (DART being generated), 99=RESOLVED (successfully completed). Other codes (10,15,23,25,27,28,29,39,43,46,47,48,55,59,65) represent intermediate or transitional states."
+  },
+  {
+    "category": "term",
+    "name": "LATEST_STAGE_NM",
+    "chunk": "TERM: LATEST_STAGE_NM\nDESCRIPTION: Current pipeline stage for this RO. Possible values: STOPPED, RESOLVED, DART_REVIEW, DART_GENERATION, SPS_LOAD, PRE_PROCESSING, ISF_GENERATION, INGESTION, DART_UI_VALIDATION, REJECTED, MAPPING_APPROVAL. RESOLVED is the desired terminal state; STOPPED and REJECTED are failure states.",
+    "description": "Current pipeline stage for this RO. Possible values: STOPPED, RESOLVED, DART_REVIEW, DART_GENERATION, SPS_LOAD, PRE_PROCESSING, ISF_GENERATION, INGESTION, DART_UI_VALIDATION, REJECTED, MAPPING_APPROVAL. RESOLVED is the desired terminal state; STOPPED and REJECTED are failure states."
+  },
+  {
+    "category": "term",
+    "name": "FAILURE_STATUS",
+    "chunk": "TERM: FAILURE_STATUS\nDESCRIPTION: Free-text failure reason when IS_FAILED=1. Known values in this dataset: 'Complete Validation Failure' (entire record set failed validation \u2014 indicates systemic source data non-conformance), 'Incompatible' (source format or schema mismatch), 'Failed' (generic processing failure), 'Stuck' (RO exceeded expected stage duration without progressing).",
+    "description": "Free-text failure reason when IS_FAILED=1. Known values in this dataset: 'Complete Validation Failure' (entire record set failed validation \u2014 indicates systemic source data non-conformance), 'Incompatible' (source format or schema mismatch), 'Failed' (generic processing failure), 'Stuck' (RO exceeded expected stage duration without progressing)."
+  },
+  {
+    "category": "term",
+    "name": "IS_STUCK",
+    "chunk": "TERM: IS_STUCK\nDESCRIPTION: Boolean flag (0/1). Set to 1 when a Roster Operation has been in its current stage longer than the historical average threshold for that stage. Stuck ROs require manual triage and escalation.",
+    "description": "Boolean flag (0/1). Set to 1 when a Roster Operation has been in its current stage longer than the historical average threshold for that stage. Stuck ROs require manual triage and escalation."
+  },
+  {
+    "category": "term",
+    "name": "IS_FAILED",
+    "chunk": "TERM: IS_FAILED\nDESCRIPTION: Boolean flag (0/1). Set to 1 when the RO has permanently failed processing. Always check FAILURE_STATUS for the specific reason.",
+    "description": "Boolean flag (0/1). Set to 1 when the RO has permanently failed processing. Always check FAILURE_STATUS for the specific reason."
+  },
+  {
+    "category": "term",
+    "name": "SRC_SYS",
+    "chunk": "TERM: SRC_SYS\nDESCRIPTION: Source system feeding the roster file. Values present in this dataset: AvailityPDM (provider data management platform, most common), Demographic (demographic data feed), ProviderGroup (provider group submissions), PDM (provider data management variant), DPE (data processing engine), SEEO (state exchange enrollment operations), RA-CRED (credentialing system), Elixir-P (pharmacy/benefits system), Calaim (California Medicaid managed care), Normal (standard feed), PostProdTest (post-production testing \u2014 should not appear in production data). Different source systems have different validation rules and failure patterns.",
+    "description": "Source system feeding the roster file. Values present in this dataset: AvailityPDM (provider data management platform, most common), Demographic (demographic data feed), ProviderGroup (provider group submissions), PDM (provider data management variant), DPE (data processing engine), SEEO (state exchange enrollment operations), RA-CRED (credentialing system), Elixir-P (pharmacy/benefits system), Calaim (California Medicaid managed care), Normal (standard feed), PostProdTest (post-production testing \u2014 should not appear in production data). Different source systems have different validation rules and failure patterns."
+  },
+  {
+    "category": "term",
+    "name": "ORG_NM",
+    "chunk": "TERM: ORG_NM\nDESCRIPTION: Provider organization name \u2014 the entity that submitted the roster file. Examples in data: Life Long Care of New London PLLC, Moonstone Springs Counseling PLLC, CareCore at Norwalk LLC. Used to identify which organizations have recurring pipeline issues.",
+    "description": "Provider organization name \u2014 the entity that submitted the roster file. Examples in data: Life Long Care of New London PLLC, Moonstone Springs Counseling PLLC, CareCore at Norwalk LLC. Used to identify which organizations have recurring pipeline issues."
+  },
+  {
+    "category": "term",
+    "name": "CNT_STATE",
+    "chunk": "TERM: CNT_STATE\nDESCRIPTION: US state abbreviation where the provider organization operates. Maps to MARKET column in aggregated_operational_metrics.csv for cross-table correlation. Values: NH, CO, NY, OH, CA, KS, IN, TX, etc.",
+    "description": "US state abbreviation where the provider organization operates. Maps to MARKET column in aggregated_operational_metrics.csv for cross-table correlation. Values: NH, CO, NY, OH, CA, KS, IN, TX, etc."
+  },
+  {
+    "category": "term",
+    "name": "LOB",
+    "chunk": "TERM: LOB\nDESCRIPTION: Line of Business \u2014 the insurance product type covered by this roster. This field can contain multiple comma-separated LOBs. Key LOBs: Medicare HMO (Medicare Advantage managed care), Medicare PPO (Medicare Advantage preferred provider), Medicaid HMO (state Medicaid managed care), Medicaid FFS (Medicaid fee-for-service \u2014 direct state payment model), Commercial HMO (employer/individual managed care), Commercial PPO/EPO (employer/individual preferred provider). Each LOB has distinct CMS or state agency regulatory requirements for provider data submission.",
+    "description": "Line of Business \u2014 the insurance product type covered by this roster. This field can contain multiple comma-separated LOBs. Key LOBs: Medicare HMO (Medicare Advantage managed care), Medicare PPO (Medicare Advantage preferred provider), Medicaid HMO (state Medicaid managed care), Medicaid FFS (Medicaid fee-for-service \u2014 direct state payment model), Commercial HMO (employer/individual managed care), Commercial PPO/EPO (employer/individual preferred provider). Each LOB has distinct CMS or state agency regulatory requirements for provider data submission."
+  },
+  {
+    "category": "term",
+    "name": "RUN_NO",
+    "chunk": "TERM: RUN_NO\nDESCRIPTION: Processing iteration number. RUN_NO=1 means the initial processing attempt. RUN_NO greater than 1 means this RO was reprocessed after an earlier failure. A high number of ROs with RUN_NO greater than 1 for the same org or state suggests persistent underlying data quality issues that retries alone cannot fix.",
+    "description": "Processing iteration number. RUN_NO=1 means the initial processing attempt. RUN_NO greater than 1 means this RO was reprocessed after an earlier failure. A high number of ROs with RUN_NO greater than 1 for the same org or state suggests persistent underlying data quality issues that retries alone cannot fix."
+  },
+  {
+    "category": "term",
+    "name": "TOT_REC_CNT",
+    "chunk": "TERM: TOT_REC_CNT\nDESCRIPTION: Total number of provider records in the roster file. Used as the denominator for all record quality percentage calculations.",
+    "description": "Total number of provider records in the roster file. Used as the denominator for all record quality percentage calculations."
+  },
+  {
+    "category": "term",
+    "name": "SCS_REC_CNT",
+    "chunk": "TERM: SCS_REC_CNT\nDESCRIPTION: Records successfully processed through all pipeline stages. Target: maximize this relative to TOT_REC_CNT.",
+    "description": "Records successfully processed through all pipeline stages. Target: maximize this relative to TOT_REC_CNT."
+  },
+  {
+    "category": "term",
+    "name": "FAIL_REC_CNT",
+    "chunk": "TERM: FAIL_REC_CNT\nDESCRIPTION: Records that failed processing due to system errors, mapping failures, or technical pipeline issues \u2014 not source data problems. Distinct from REJ_REC_CNT. High FAIL_REC_CNT relative to TOT_REC_CNT suggests pipeline or mapping configuration issues.",
+    "description": "Records that failed processing due to system errors, mapping failures, or technical pipeline issues \u2014 not source data problems. Distinct from REJ_REC_CNT. High FAIL_REC_CNT relative to TOT_REC_CNT suggests pipeline or mapping configuration issues."
+  },
+  {
+    "category": "term",
+    "name": "REJ_REC_CNT",
+    "chunk": "TERM: REJ_REC_CNT\nDESCRIPTION: Records rejected due to validation or compliance errors \u2014 the source data itself did not conform to expected formats or regulatory standards. This is a data quality indicator, not a pipeline health indicator. High REJ_REC_CNT means the submitting organization's data is non-conformant. Requires source-side remediation, not pipeline fixes.",
+    "description": "Records rejected due to validation or compliance errors \u2014 the source data itself did not conform to expected formats or regulatory standards. This is a data quality indicator, not a pipeline health indicator. High REJ_REC_CNT means the submitting organization's data is non-conformant. Requires source-side remediation, not pipeline fixes."
+  },
+  {
+    "category": "term",
+    "name": "SKIP_REC_CNT",
+    "chunk": "TERM: SKIP_REC_CNT\nDESCRIPTION: Records skipped due to business rules \u2014 typically deduplication (record already exists in system), or records that do not meet eligibility criteria for processing. Not a failure, but high SKIP_REC_CNT may indicate duplicate submissions or stale data from the provider organization.",
+    "description": "Records skipped due to business rules \u2014 typically deduplication (record already exists in system), or records that do not meet eligibility criteria for processing. Not a failure, but high SKIP_REC_CNT may indicate duplicate submissions or stale data from the provider organization."
+  },
+  {
+    "category": "term",
+    "name": "SCS_PCT",
+    "chunk": "TERM: SCS_PCT\nDESCRIPTION: Success percentage for records within a single roster file: (SCS_REC_CNT / TOT_REC_CNT) * 100. SPS_LOAD_HEALTH flag is derived from this value. Files below 85% SCS_PCT should be flagged for review.",
+    "description": "Success percentage for records within a single roster file: (SCS_REC_CNT / TOT_REC_CNT) * 100. SPS_LOAD_HEALTH flag is derived from this value. Files below 85% SCS_PCT should be flagged for review."
+  },
+  {
+    "category": "term",
+    "name": "PRE_PROCESSING_HEALTH",
+    "chunk": "TERM: PRE_PROCESSING_HEALTH\nDESCRIPTION: Health flag for the pre-processing stage. Values: Green (within normal duration), Yellow (approaching threshold \u2014 monitor), Red (exceeded threshold \u2014 escalate). Same color system applies to all stage health columns.",
+    "description": "Health flag for the pre-processing stage. Values: Green (within normal duration), Yellow (approaching threshold \u2014 monitor), Red (exceeded threshold \u2014 escalate). Same color system applies to all stage health columns."
+  },
+  {
+    "category": "term",
+    "name": "SPS_LOAD_HEALTH",
+    "chunk": "TERM: SPS_LOAD_HEALTH\nDESCRIPTION: Health flag for the SPS load stage. IMPORTANT: unlike other stage health flags which are based on duration, SPS_LOAD_HEALTH is derived from SCS_PCT (record success rate). Red SPS_LOAD_HEALTH means the file had a low success rate, not necessarily a slow load.",
+    "description": "Health flag for the SPS load stage. IMPORTANT: unlike other stage health flags which are based on duration, SPS_LOAD_HEALTH is derived from SCS_PCT (record success rate). Red SPS_LOAD_HEALTH means the file had a low success rate, not necessarily a slow load."
+  },
+  {
+    "category": "term",
+    "name": "MAPPING_APROVAL_HEALTH",
+    "chunk": "TERM: MAPPING_APROVAL_HEALTH\nDESCRIPTION: Health flag for the mapping approval stage. Note the intentional typo in column name: APROVAL not APPROVAL \u2014 match this exactly in code.",
+    "description": "Health flag for the mapping approval stage. Note the intentional typo in column name: APROVAL not APPROVAL \u2014 match this exactly in code."
+  },
+  {
+    "category": "term",
+    "name": "PRE_PROCESSING_DURATION",
+    "chunk": "TERM: PRE_PROCESSING_DURATION\nDESCRIPTION: Actual time in minutes spent in the pre-processing stage for this RO.",
+    "description": "Actual time in minutes spent in the pre-processing stage for this RO."
+  },
+  {
+    "category": "term",
+    "name": "AVG_ISF_GENERATION_DURATION",
+    "chunk": "TERM: AVG_ISF_GENERATION_DURATION\nDESCRIPTION: Historical average duration in minutes for ISF generation stage. Used to compute duration ratio for anomaly detection. Ratio = actual / avg. Ratio above 2.0 is flagged as a duration outlier.",
+    "description": "Historical average duration in minutes for ISF generation stage. Used to compute duration ratio for anomaly detection. Ratio = actual / avg. Ratio above 2.0 is flagged as a duration outlier."
+  },
+  {
+    "category": "term",
+    "name": "MARKET",
+    "chunk": "TERM: MARKET\nDESCRIPTION: State or regional grouping in aggregated_operational_metrics.csv. Values include standard state abbreviations (CA, NY, TX, etc.) plus NATIONAL (nationwide aggregate), WNY (Western New York regional), WA (Washington), WI (Wisconsin), WV (West Virginia). Maps to CNT_STATE in roster_processing_details.csv.",
+    "description": "State or regional grouping in aggregated_operational_metrics.csv. Values include standard state abbreviations (CA, NY, TX, etc.) plus NATIONAL (nationwide aggregate), WNY (Western New York regional), WA (Washington), WI (Wisconsin), WV (West Virginia). Maps to CNT_STATE in roster_processing_details.csv."
+  },
+  {
+    "category": "term",
+    "name": "MONTH",
+    "chunk": "TERM: MONTH\nDESCRIPTION: Reporting month in aggregated_operational_metrics.csv. Format: MM-YYYY (e.g., 01-2026, 12-2025). Data spans 12 months: 02-2025 through 01-2026.",
+    "description": "Reporting month in aggregated_operational_metrics.csv. Format: MM-YYYY (e.g., 01-2026, 12-2025). Data spans 12 months: 02-2025 through 01-2026."
+  },
+  {
+    "category": "term",
+    "name": "CLIENT_ID",
+    "chunk": "TERM: CLIENT_ID\nDESCRIPTION: Payer/insurance client identifier. Only one client (CLIENT_ID=3) is present in the current dataset.",
+    "description": "Payer/insurance client identifier. Only one client (CLIENT_ID=3) is present in the current dataset."
+  },
+  {
+    "category": "term",
+    "name": "FIRST_ITER_SCS_CNT",
+    "chunk": "TERM: FIRST_ITER_SCS_CNT\nDESCRIPTION: Transactions successfully processed on the first pass (RUN_NO=1 equivalent at market level). High first-iteration success means the pipeline is working well for this market.",
+    "description": "Transactions successfully processed on the first pass (RUN_NO=1 equivalent at market level). High first-iteration success means the pipeline is working well for this market."
+  },
+  {
+    "category": "term",
+    "name": "FIRST_ITER_FAIL_CNT",
+    "chunk": "TERM: FIRST_ITER_FAIL_CNT\nDESCRIPTION: Transactions that failed on the first pass. These are candidates for retry/reprocessing.",
+    "description": "Transactions that failed on the first pass. These are candidates for retry/reprocessing."
+  },
+  {
+    "category": "term",
+    "name": "NEXT_ITER_SCS_CNT",
+    "chunk": "TERM: NEXT_ITER_SCS_CNT\nDESCRIPTION: Transactions that succeeded only after retry/reprocessing. Also called 'retry lift'. Large NEXT_ITER_SCS_CNT relative to FIRST_ITER_FAIL_CNT means retries are effective. Small means retries are not recovering failures \u2014 indicating deeper data quality issues.",
+    "description": "Transactions that succeeded only after retry/reprocessing. Also called 'retry lift'. Large NEXT_ITER_SCS_CNT relative to FIRST_ITER_FAIL_CNT means retries are effective. Small means retries are not recovering failures \u2014 indicating deeper data quality issues."
+  },
+  {
+    "category": "term",
+    "name": "NEXT_ITER_FAIL_CNT",
+    "chunk": "TERM: NEXT_ITER_FAIL_CNT\nDESCRIPTION: Transactions that still failed even after reprocessing. These represent unrecoverable failures requiring manual intervention or source data correction.",
+    "description": "Transactions that still failed even after reprocessing. These represent unrecoverable failures requiring manual intervention or source data correction."
+  },
+  {
+    "category": "term",
+    "name": "OVERALL_SCS_CNT",
+    "chunk": "TERM: OVERALL_SCS_CNT\nDESCRIPTION: Total successful transactions across all iterations: FIRST_ITER_SCS_CNT + NEXT_ITER_SCS_CNT.",
+    "description": "Total successful transactions across all iterations: FIRST_ITER_SCS_CNT + NEXT_ITER_SCS_CNT."
+  },
+  {
+    "category": "term",
+    "name": "OVERALL_FAIL_CNT",
+    "chunk": "TERM: OVERALL_FAIL_CNT\nDESCRIPTION: Total failed transactions across all iterations: NEXT_ITER_FAIL_CNT (persistent failures that retries could not recover).",
+    "description": "Total failed transactions across all iterations: NEXT_ITER_FAIL_CNT (persistent failures that retries could not recover)."
+  },
+  {
+    "category": "term",
+    "name": "SCS_PERCENT",
+    "chunk": "TERM: SCS_PERCENT\nDESCRIPTION: Overall transaction success rate percentage for a market and month: (OVERALL_SCS_CNT / (OVERALL_SCS_CNT + OVERALL_FAIL_CNT)) * 100. The operational health threshold is 95%. Markets below 85% require immediate escalation. Range in dataset: 0.0 to 100.0.",
+    "description": "Overall transaction success rate percentage for a market and month: (OVERALL_SCS_CNT / (OVERALL_SCS_CNT + OVERALL_FAIL_CNT)) * 100. The operational health threshold is 95%. Markets below 85% require immediate escalation. Range in dataset: 0.0 to 100.0."
+  },
+  {
+    "category": "term",
+    "name": "IS_ACTIVE",
+    "chunk": "TERM: IS_ACTIVE\nDESCRIPTION: Whether this aggregated_operational_metrics record is currently active (1=active, 0=historical/superseded).",
+    "description": "Whether this aggregated_operational_metrics record is currently active (1=active, 0=historical/superseded)."
+  },
+  {
+    "category": "term",
+    "name": "Complete Validation Failure",
+    "chunk": "TERM: Complete Validation Failure\nDESCRIPTION: A FAILURE_STATUS value indicating that the entire record set in the roster file failed validation checks. This is distinct from partial failures. It typically means the source organization submitted data in a format or schema incompatible with current validation rules \u2014 often triggered by regulatory updates, schema version mismatches, or missing required fields mandated by CMS or state Medicaid agencies.",
+    "description": "A FAILURE_STATUS value indicating that the entire record set in the roster file failed validation checks. This is distinct from partial failures. It typically means the source organization submitted data in a format or schema incompatible with current validation rules \u2014 often triggered by regulatory updates, schema version mismatches, or missing required fields mandated by CMS or state Medicaid agencies."
+  },
+  {
+    "category": "term",
+    "name": "Incompatible",
+    "chunk": "TERM: Incompatible\nDESCRIPTION: A FAILURE_STATUS value indicating the source file format or schema is incompatible with the pipeline's expected input format. Common causes: wrong file version, incorrect delimiter, unsupported encoding, or column mapping mismatch.",
+    "description": "A FAILURE_STATUS value indicating the source file format or schema is incompatible with the pipeline's expected input format. Common causes: wrong file version, incorrect delimiter, unsupported encoding, or column mapping mismatch."
+  },
+  {
+    "category": "term",
+    "name": "DART",
+    "chunk": "TERM: DART\nDESCRIPTION: Data Aggregation and Reconciliation Tool. The DART stage generates a structured output feed from the processed provider data. DART_GENERATION creates the feed; DART_REVIEW is human/automated quality review; DART_UI_VALIDATION is the UI-based final check before SPS load.",
+    "description": "Data Aggregation and Reconciliation Tool. The DART stage generates a structured output feed from the processed provider data. DART_GENERATION creates the feed; DART_REVIEW is human/automated quality review; DART_UI_VALIDATION is the UI-based final check before SPS load."
+  },
+  {
+    "category": "term",
+    "name": "ISF",
+    "chunk": "TERM: ISF\nDESCRIPTION: Internal Standard Format. The canonical provider data representation used internally after source data is transformed. ISF_GENERATION converts source-specific data into this uniform format.",
+    "description": "Internal Standard Format. The canonical provider data representation used internally after source data is transformed. ISF_GENERATION converts source-specific data into this uniform format."
+  },
+  {
+    "category": "term",
+    "name": "SPS",
+    "chunk": "TERM: SPS\nDESCRIPTION: System of record for provider data \u2014 the final destination for successfully processed roster records. SPS_LOAD is the terminal pipeline stage.",
+    "description": "System of record for provider data \u2014 the final destination for successfully processed roster records. SPS_LOAD is the terminal pipeline stage."
+  },
+  {
+    "category": "term",
+    "name": "retry_lift",
+    "chunk": "TERM: retry_lift\nDESCRIPTION: The improvement in success count achieved through reprocessing: NEXT_ITER_SCS_CNT. A high retry lift means reprocessing recovers many initially-failed transactions. A low retry lift despite high first-iteration failures suggests systemic data quality problems that retries cannot fix.",
+    "description": "The improvement in success count achieved through reprocessing: NEXT_ITER_SCS_CNT. A high retry lift means reprocessing recovers many initially-failed transactions. A low retry lift despite high first-iteration failures suggests systemic data quality problems that retries cannot fix."
+  },
+  {
+    "category": "term",
+    "name": "duration_outlier",
+    "chunk": "TERM: duration_outlier\nDESCRIPTION: A roster operation where the actual stage duration exceeds 2x the historical average (AVG_*_DURATION) for that stage. Duration outliers indicate bottlenecks, system slowdowns, or stuck operations requiring investigation.",
+    "description": "A roster operation where the actual stage duration exceeds 2x the historical average (AVG_*_DURATION) for that stage. Duration outliers indicate bottlenecks, system slowdowns, or stuck operations requiring investigation."
+  },
+  {
+    "category": "term",
+    "name": "triage_stuck_ros",
+    "chunk": "TERM: triage_stuck_ros\nDESCRIPTION: Diagnostic procedure: find all IS_STUCK=1 ROs, rank by stage duration vs historical average, overlay health flags, recommend escalation priority.",
+    "description": "Diagnostic procedure: find all IS_STUCK=1 ROs, rank by stage duration vs historical average, overlay health flags, recommend escalation priority."
+  },
+  {
+    "category": "term",
+    "name": "record_quality_audit",
+    "chunk": "TERM: record_quality_audit\nDESCRIPTION: Diagnostic procedure: for a given state or org, compute FAIL_REC_CNT + REJ_REC_CNT as percentage of TOT_REC_CNT, flag files below SCS_PCT threshold, distinguish processing failures from compliance rejections.",
+    "description": "Diagnostic procedure: for a given state or org, compute FAIL_REC_CNT + REJ_REC_CNT as percentage of TOT_REC_CNT, flag files below SCS_PCT threshold, distinguish processing failures from compliance rejections."
+  },
+  {
+    "category": "term",
+    "name": "market_health_report",
+    "chunk": "TERM: market_health_report\nDESCRIPTION: Diagnostic procedure: correlate a market's SCS_PERCENT from CSV2 with pipeline-level file rejection rates from CSV1 for the same state and period.",
+    "description": "Diagnostic procedure: correlate a market's SCS_PERCENT from CSV2 with pipeline-level file rejection rates from CSV1 for the same state and period."
+  },
+  {
+    "category": "term",
+    "name": "retry_effectiveness_analysis",
+    "chunk": "TERM: retry_effectiveness_analysis\nDESCRIPTION: Diagnostic procedure: for RUN_NO > 1, compare first-pass vs retry SCS_PCT to determine if reprocessing is improving outcomes.",
+    "description": "Diagnostic procedure: for RUN_NO > 1, compare first-pass vs retry SCS_PCT to determine if reprocessing is improving outcomes."
+  },
+  {
+    "category": "stage",
+    "name": "INGESTION",
+    "chunk": "STAGE: INGESTION\nDESCRIPTION: Stage 0 \u2014 File intake: the roster file is received, checksummed, and registered in the system. Failures here indicate file transfer or format issues before any processing begins.",
+    "description": "Stage 0 \u2014 File intake: the roster file is received, checksummed, and registered in the system. Failures here indicate file transfer or format issues before any processing begins."
+  },
+  {
+    "category": "stage",
+    "name": "PRE_PROCESSING",
+    "chunk": "STAGE: PRE_PROCESSING\nDESCRIPTION: Stage 1 \u2014 Initial validation and preparation: format checks, deduplication detection, basic field validation. PRE_PROCESSING_HEALTH flag reflects duration vs historical average. Red flag here often indicates unusually large files or schema changes.",
+    "description": "Stage 1 \u2014 Initial validation and preparation: format checks, deduplication detection, basic field validation. PRE_PROCESSING_HEALTH flag reflects duration vs historical average. Red flag here often indicates unusually large files or schema changes."
+  },
+  {
+    "category": "stage",
+    "name": "MAPPING_APPROVAL",
+    "chunk": "STAGE: MAPPING_APPROVAL\nDESCRIPTION: Stage 2 \u2014 Field mapping review: source fields are mapped to internal schema. May involve human approval for new or changed mappings. MAPPING_APROVAL_DURATION (note typo in column name) tracks time in this stage. Long durations indicate mapping review queue backlog.",
+    "description": "Stage 2 \u2014 Field mapping review: source fields are mapped to internal schema. May involve human approval for new or changed mappings. MAPPING_APROVAL_DURATION (note typo in column name) tracks time in this stage. Long durations indicate mapping review queue backlog."
+  },
+  {
+    "category": "stage",
+    "name": "ISF_GENERATION",
+    "chunk": "STAGE: ISF_GENERATION\nDESCRIPTION: Stage 3 \u2014 Internal Standard Format generation: source data is transformed into the canonical provider data model. AVG_ISF_GENERATION_DURATION provides the baseline for anomaly detection. Failures here often indicate data type mismatches or missing required fields.",
+    "description": "Stage 3 \u2014 Internal Standard Format generation: source data is transformed into the canonical provider data model. AVG_ISF_GENERATION_DURATION provides the baseline for anomaly detection. Failures here often indicate data type mismatches or missing required fields."
+  },
+  {
+    "category": "stage",
+    "name": "DART_GENERATION",
+    "chunk": "STAGE: DART_GENERATION\nDESCRIPTION: Stage 4 \u2014 DART payload creation: the ISF data is packaged into the DART output format for downstream consumption. AVG_DART_GENERATION_DURATION is the benchmark. This stage is computationally intensive \u2014 duration anomalies here are common for large roster files.",
+    "description": "Stage 4 \u2014 DART payload creation: the ISF data is packaged into the DART output format for downstream consumption. AVG_DART_GENERATION_DURATION is the benchmark. This stage is computationally intensive \u2014 duration anomalies here are common for large roster files."
+  },
+  {
+    "category": "stage",
+    "name": "DART_REVIEW",
+    "chunk": "STAGE: DART_REVIEW\nDESCRIPTION: Stage 5 \u2014 Quality review of DART output: human or automated review of the generated DART payload before it proceeds to UI validation. DART_REVIEW_DURATION can be long when review queues are backed up. Red DART_REVIEW_HEALTH indicates queue pressure or review bottlenecks.",
+    "description": "Stage 5 \u2014 Quality review of DART output: human or automated review of the generated DART payload before it proceeds to UI validation. DART_REVIEW_DURATION can be long when review queues are backed up. Red DART_REVIEW_HEALTH indicates queue pressure or review bottlenecks."
+  },
+  {
+    "category": "stage",
+    "name": "DART_UI_VALIDATION",
+    "chunk": "STAGE: DART_UI_VALIDATION\nDESCRIPTION: Stage 6 \u2014 UI-based validation: DART records are validated through the user interface layer, catching display, formatting, and cross-field consistency issues. AVG_DART_UI_VLDTN_DURATION is the benchmark column name.",
+    "description": "Stage 6 \u2014 UI-based validation: DART records are validated through the user interface layer, catching display, formatting, and cross-field consistency issues. AVG_DART_UI_VLDTN_DURATION is the benchmark column name."
+  },
+  {
+    "category": "stage",
+    "name": "SPS_LOAD",
+    "chunk": "STAGE: SPS_LOAD\nDESCRIPTION: Stage 7 (Final) \u2014 Load into provider system of record. This is the terminal success stage. SPS_LOAD_HEALTH is derived from SCS_PCT (record success rate), not from duration. AVG_SPS_LOAD_DURATION tracks load time. RESOLVED status (FILE_STATUS_CD=99) is set after successful SPS load.",
+    "description": "Stage 7 (Final) \u2014 Load into provider system of record. This is the terminal success stage. SPS_LOAD_HEALTH is derived from SCS_PCT (record success rate), not from duration. AVG_SPS_LOAD_DURATION tracks load time. RESOLVED status (FILE_STATUS_CD=99) is set after successful SPS load."
+  },
+  {
+    "category": "stage",
+    "name": "STOPPED",
+    "chunk": "STAGE: STOPPED\nDESCRIPTION: Terminal failure stage (FILE_STATUS_CD=9). The pipeline has halted and will not progress without manual intervention. Requires ops team triage to identify root cause and restart.",
+    "description": "Terminal failure stage (FILE_STATUS_CD=9). The pipeline has halted and will not progress without manual intervention. Requires ops team triage to identify root cause and restart."
+  },
+  {
+    "category": "stage",
+    "name": "REJECTED",
+    "chunk": "STAGE: REJECTED\nDESCRIPTION: Terminal failure stage. The roster operation was rejected \u2014 typically due to Complete Validation Failure or Incompatible source data. Unlike STOPPED (which may be recoverable), REJECTED usually requires source data correction before resubmission.",
+    "description": "Terminal failure stage. The roster operation was rejected \u2014 typically due to Complete Validation Failure or Incompatible source data. Unlike STOPPED (which may be recoverable), REJECTED usually requires source data correction before resubmission."
+  },
+  {
+    "category": "stage",
+    "name": "RESOLVED",
+    "chunk": "STAGE: RESOLVED\nDESCRIPTION: Terminal success stage (FILE_STATUS_CD=99). The roster operation completed the full pipeline and records were successfully loaded into SPS. This is the desired end state.",
+    "description": "Terminal success stage (FILE_STATUS_CD=99). The roster operation completed the full pipeline and records were successfully loaded into SPS. This is the desired end state."
+  },
+  {
+    "category": "note",
+    "name": "fail_vs_reject_distinction",
+    "chunk": "NOTE: fail_vs_reject_distinction\nDESCRIPTION: FAIL_REC_CNT and REJ_REC_CNT are fundamentally different: FAIL_REC_CNT indicates pipeline/system failures (mapping errors, processing bugs, infrastructure issues) while REJ_REC_CNT indicates compliance/validation failures in the source data itself. A high REJ_REC_CNT means the provider organization needs to fix their data \u2014 no amount of pipeline optimization will help. Always diagnose which type dominates before recommending remediation.",
+    "description": "FAIL_REC_CNT and REJ_REC_CNT are fundamentally different: FAIL_REC_CNT indicates pipeline/system failures (mapping errors, processing bugs, infrastructure issues) while REJ_REC_CNT indicates compliance/validation failures in the source data itself. A high REJ_REC_CNT means the provider organization needs to fix their data \u2014 no amount of pipeline optimization will help. Always diagnose which type dominates before recommending remediation."
+  },
+  {
+    "category": "note",
+    "name": "sps_load_health_derivation",
+    "chunk": "NOTE: sps_load_health_derivation\nDESCRIPTION: SPS_LOAD_HEALTH is the only health flag NOT derived from stage duration. It is derived from SCS_PCT (record success rate). Red SPS_LOAD_HEALTH means the file had poor record success, not a slow load time. This is a critical distinction when interpreting health dashboards.",
+    "description": "SPS_LOAD_HEALTH is the only health flag NOT derived from stage duration. It is derived from SCS_PCT (record success rate). Red SPS_LOAD_HEALTH means the file had poor record success, not a slow load time. This is a critical distinction when interpreting health dashboards."
+  },
+  {
+    "category": "note",
+    "name": "market_vs_pipeline_correlation",
+    "chunk": "NOTE: market_vs_pipeline_correlation\nDESCRIPTION: A market's SCS_PERCENT in CSV2 (aggregated_operational_metrics) reflects the aggregate outcome of all roster operations in that state. When SCS_PERCENT drops, correlate with CSV1 by matching MARKET to CNT_STATE to find which specific ROs, organizations, LOBs, or source systems are driving the decline.",
+    "description": "A market's SCS_PERCENT in CSV2 (aggregated_operational_metrics) reflects the aggregate outcome of all roster operations in that state. When SCS_PERCENT drops, correlate with CSV1 by matching MARKET to CNT_STATE to find which specific ROs, organizations, LOBs, or source systems are driving the decline."
+  },
+  {
+    "category": "note",
+    "name": "retry_interpretation",
+    "chunk": "NOTE: retry_interpretation\nDESCRIPTION: Large NEXT_ITER_FAIL_CNT relative to FIRST_ITER_FAIL_CNT means retries are not recovering failures. This is a signal of deep data quality problems, not transient pipeline errors. Conversely, large NEXT_ITER_SCS_CNT (high retry lift) means first-pass failures are transient and the retry mechanism is working.",
+    "description": "Large NEXT_ITER_FAIL_CNT relative to FIRST_ITER_FAIL_CNT means retries are not recovering failures. This is a signal of deep data quality problems, not transient pipeline errors. Conversely, large NEXT_ITER_SCS_CNT (high retry lift) means first-pass failures are transient and the retry mechanism is working."
+  },
+  {
+    "category": "note",
+    "name": "stuck_ro_escalation",
+    "chunk": "NOTE: stuck_ro_escalation\nDESCRIPTION: IS_STUCK=1 ROs should be ranked by (actual_duration / avg_duration) ratio, not just absolute duration. An RO stuck at 10x its average is more urgent than one at 3x its average, even if the absolute time is similar. Red health flags on the current stage further increase escalation priority.",
+    "description": "IS_STUCK=1 ROs should be ranked by (actual_duration / avg_duration) ratio, not just absolute duration. An RO stuck at 10x its average is more urgent than one at 3x its average, even if the absolute time is similar. Red health flags on the current stage further increase escalation priority."
+  },
+  {
+    "category": "note",
+    "name": "lob_regulatory_context",
+    "chunk": "NOTE: lob_regulatory_context\nDESCRIPTION: Different Lines of Business have different regulatory oversight: Medicare (CMS oversight, NCPDP/X12 standards), Medicaid FFS (state agency oversight, varies by state), Medicaid HMO (state + CMS dual oversight), Commercial (state insurance department oversight). Validation failures in Medicaid FFS often trace to state-specific submission requirement changes. CMS rule updates frequently trigger Complete Validation Failure spikes across Medicare LOBs.",
+    "description": "Different Lines of Business have different regulatory oversight: Medicare (CMS oversight, NCPDP/X12 standards), Medicaid FFS (state agency oversight, varies by state), Medicaid HMO (state + CMS dual oversight), Commercial (state insurance department oversight). Validation failures in Medicaid FFS often trace to state-specific submission requirement changes. CMS rule updates frequently trigger Complete Validation Failure spikes across Medicare LOBs."
+  },
+  {
+    "category": "note",
+    "name": "source_system_risk_profile",
+    "chunk": "NOTE: source_system_risk_profile\nDESCRIPTION: AvailityPDM is the most common source system and generally has the most mature validation pipeline. Demographic and ProviderGroup feeds have higher historical rejection rates due to less standardized input formats. PostProdTest entries should never appear in production data \u2014 their presence indicates a test/prod environment boundary issue.",
+    "description": "AvailityPDM is the most common source system and generally has the most mature validation pipeline. Demographic and ProviderGroup feeds have higher historical rejection rates due to less standardized input formats. PostProdTest entries should never appear in production data \u2014 their presence indicates a test/prod environment boundary issue."
+  },
+  {
+    "category": "note",
+    "name": "run_no_interpretation",
+    "chunk": "NOTE: run_no_interpretation\nDESCRIPTION: RUN_NO=1 is the first processing attempt. RUN_NO greater than 1 indicates reprocessing. If the same RO has multiple rows with increasing RUN_NO and still shows IS_FAILED=1, it indicates the failure is persistent and not recoverable through retry \u2014 escalate for source data review. Compare SCS_PCT across run numbers to measure retry effectiveness.",
+    "description": "RUN_NO=1 is the first processing attempt. RUN_NO greater than 1 indicates reprocessing. If the same RO has multiple rows with increasing RUN_NO and still shows IS_FAILED=1, it indicates the failure is persistent and not recoverable through retry \u2014 escalate for source data review. Compare SCS_PCT across run numbers to measure retry effectiveness."
+  },
+  {
+    "category": "note",
+    "name": "health_flag_thresholds",
+    "chunk": "NOTE: health_flag_thresholds\nDESCRIPTION: Green = stage completed within historical average duration (ratio under 1.5x). Yellow = stage is taking longer than average but not yet critical (ratio 1.5x to 2.0x). Red = stage significantly exceeds historical average or has a critical failure indicator (ratio above 2.0x, or SCS_PCT below threshold for SPS_LOAD_HEALTH). Red flags require immediate attention.",
+    "description": "Green = stage completed within historical average duration (ratio under 1.5x). Yellow = stage is taking longer than average but not yet critical (ratio 1.5x to 2.0x). Red = stage significantly exceeds historical average or has a critical failure indicator (ratio above 2.0x, or SCS_PCT below threshold for SPS_LOAD_HEALTH). Red flags require immediate attention."
+  },
+  {
+    "category": "note",
+    "name": "national_market_context",
+    "chunk": "NOTE: national_market_context\nDESCRIPTION: The NATIONAL market in aggregated_operational_metrics.csv is a rollup of all state markets. Use it as a benchmark \u2014 if a state's SCS_PERCENT is below NATIONAL, it is underperforming. The 95% SCS_PERCENT threshold is the operational target; below 85% requires escalation.",
+    "description": "The NATIONAL market in aggregated_operational_metrics.csv is a rollup of all state markets. Use it as a benchmark \u2014 if a state's SCS_PERCENT is below NATIONAL, it is underperforming. The 95% SCS_PERCENT threshold is the operational target; below 85% requires escalation."
+  },
+  {
+    "category": "note",
+    "name": "dataset_time_range",
+    "chunk": "NOTE: dataset_time_range\nDESCRIPTION: aggregated_operational_metrics.csv covers 12 months: 02-2025 through 01-2026. roster_processing_details.csv contains records from late 2025 to early 2026. When correlating, align on state (CNT_STATE = MARKET) and approximate time period (FILE_RECEIVED_DT month = MONTH).",
+    "description": "aggregated_operational_metrics.csv covers 12 months: 02-2025 through 01-2026. roster_processing_details.csv contains records from late 2025 to early 2026. When correlating, align on state (CNT_STATE = MARKET) and approximate time period (FILE_RECEIVED_DT month = MONTH)."
+  },
+  {
+    "category": "note",
+    "name": "calaim_context",
+    "chunk": "NOTE: calaim_context\nDESCRIPTION: Calaim source system refers to California's Medi-Cal managed care data system (CalAIM \u2014 California Advancing and Innovating Medi-Cal). Roster files from this source are subject to California DHCS requirements in addition to standard CMS rules, which can cause higher rejection rates during policy transition periods.",
+    "description": "Calaim source system refers to California's Medi-Cal managed care data system (CalAIM \u2014 California Advancing and Innovating Medi-Cal). Roster files from this source are subject to California DHCS requirements in addition to standard CMS rules, which can cause higher rejection rates during policy transition periods."
+  }
+]

@@ -1,0 +1,43 @@
+triage_stuck_ros:
+  description: Finds all IS_STUCK=1 ROs, ranks by time stuck and Red health flags,
+    recommends escalation priority.
+  function: escalation_score = duration_ratio + red_health_flag_bonus + stuck_indicator
+  logic:
+  - Filter pipeline records where IS_STUCK = 1.
+  - Rank by time stuck using duration anomalies and current stage duration.
+  - Prioritize rows with Red health flags and highest anomaly ratios.
+record_quality_audit:
+  description: For a given state or org, computes FAIL_REC_CNT + REJ_REC_CNT + SKIP_REC_CNT
+    as a percentage of TOT_REC_CNT and flags files below SCS_PCT threshold.
+  function: quality_issue_rate = (FAIL_REC_CNT + REJ_REC_CNT + SKIP_REC_CNT) / TOT_REC_CNT
+  logic:
+  - Filter records to the requested market or organization.
+  - Compute quality loss as (FAIL_REC_CNT + REJ_REC_CNT + SKIP_REC_CNT) / TOT_REC_CNT.
+  - Flag files with low SCS_PCT or elevated combined failure, rejection, and skip
+    proportions.
+market_health_report:
+  description: Correlates a market's SCS_PERCENT with pipeline-level file rejection
+    rates for the same state and period.
+  function: state_period_join = merge(file_rejection_rate_by_state_period, market_scs_percent_by_state_period)
+  logic:
+  - Aggregate file-level rejection metrics by state and period.
+  - Join state-period pipeline metrics to market-level SCS_PERCENT.
+  - Identify whether file-level rejection pressure aligns with market decline.
+retry_effectiveness_analysis:
+  description: For RUN_NO > 1, compares first-pass vs. retry SCS_PCT to determine
+    if reprocessing is actually improving outcomes.
+  function: retry_lift = retry_scs_pct - first_pass_scs_pct
+  logic:
+  - Compare RUN_NO = 1 results to retry runs for the same RO_ID.
+  - Measure whether retries improve success percentage or reduce rejection rates.
+  - Flag retry patterns that fail to recover the original issue.
+lob_rejection_breakdown:
+  description: Groups rejection rates by Line of Business to analyze the distribution
+    of rejections across different business lines.
+  function: rejection_rate_by_lob = SUM(REJ_REC_CNT) / SUM(TOT_REC_CNT) GROUP BY LOB
+  logic:
+  - Filter records to the desired time period and market or organization if needed.
+  - Group the data by Line of Business (LOB).
+  - For each LOB, compute total REJ_REC_CNT and total TOT_REC_CNT.
+  - Calculate rejection rate as SUM(REJ_REC_CNT) divided by SUM(TOT_REC_CNT).
+  - Return the rejection rate per LOB for further analysis or reporting.
