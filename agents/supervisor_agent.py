@@ -212,7 +212,7 @@ class SupervisorAgent:
                 tool_requests.append("visualization")
                 desired_outputs.append("visualization")
 
-        if any(token in normalized for token in memory_lookup_patterns) and not is_procedure_update and not is_procedure_execution:
+        if any(token in normalized for token in memory_lookup_patterns) and not is_procedure_update:
             intents.append("memory_lookup")
             topics.append("past_responses")
             tool_requests.append("episodic_memory")
@@ -517,10 +517,14 @@ Detected market: {market or "unknown"}
                 brief["desired_outputs"].append("procedure_update_confirmation")
 
         if brief["is_procedure_execution"]:
-            brief["is_memory_query"] = False
-            brief["use_memory_retrieval"] = False
+            memory_lookup_requested = self._has_memory_lookup_intent(query)
+            brief["is_memory_query"] = memory_lookup_requested
+            brief["use_memory_retrieval"] = memory_lookup_requested
             brief["tool_requests"] = ["data_query"]
             brief["desired_outputs"] = ["answer"]
+            if memory_lookup_requested:
+                brief["tool_requests"].append("episodic_memory")
+                brief["desired_outputs"].append("memory_summary")
             if brief["chart_preferences"]:
                 brief["tool_requests"].append("visualization")
                 brief["desired_outputs"].append("visualization")

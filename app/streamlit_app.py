@@ -41,7 +41,13 @@ def default_query_state(query):
     }
 
 
-def render_assistant_details(message):
+def build_chart_key(message_key, chart_name, position):
+
+    safe_name = str(chart_name).replace(" ", "_").lower()
+    return f"{message_key}_plotly_{position}_{safe_name}"
+
+
+def render_assistant_details(message, message_key="assistant"):
 
     if message.get("runtime_seconds") is not None:
         st.caption(f"Completed in {message['runtime_seconds']:.1f}s")
@@ -56,11 +62,19 @@ def render_assistant_details(message):
             col1, col2 = st.columns(2)
             left = chart_items[start]
             with col1:
-                st.plotly_chart(left[1], use_container_width=True)
+                st.plotly_chart(
+                    left[1],
+                    use_container_width=True,
+                    key=build_chart_key(message_key, left[0], f"{start}_left"),
+                )
             if start + 1 < len(chart_items):
                 right = chart_items[start + 1]
                 with col2:
-                    st.plotly_chart(right[1], use_container_width=True)
+                    st.plotly_chart(
+                        right[1],
+                        use_container_width=True,
+                        key=build_chart_key(message_key, right[0], f"{start + 1}_right"),
+                    )
 
     if message.get("web_context"):
         with st.expander("External context"):
@@ -75,7 +89,7 @@ def render_assistant_details(message):
             st.markdown(message["report"])
 
 
-def render_message(message):
+def render_message(message, message_key=None):
 
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -83,7 +97,7 @@ def render_message(message):
         if message["role"] != "assistant":
             return
 
-        render_assistant_details(message)
+        render_assistant_details(message, message_key=message_key or "assistant")
 
 
 def render_sidebar():
@@ -288,8 +302,8 @@ initialize_app()
 
 starter_query = render_sidebar()
 
-for message in st.session_state.messages:
-    render_message(message)
+for index, message in enumerate(st.session_state.messages):
+    render_message(message, message_key=f"message_{index}")
 
 if not st.session_state.messages:
     st.info("Start with a question in the chat box or use one of the starter prompts in the sidebar.")
@@ -340,6 +354,6 @@ if query:
             assistant_message = build_assistant_message(result, runtime_seconds)
 
         st.markdown(assistant_message["content"])
-        render_assistant_details(assistant_message)
+        render_assistant_details(assistant_message, message_key="live_response")
 
     st.session_state.messages.append(assistant_message)

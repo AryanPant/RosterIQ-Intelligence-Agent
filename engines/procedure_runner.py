@@ -129,8 +129,19 @@ class ProcedureRunner:
         if procedure_name == "triage_stuck_ros":
             pipeline = self.data.get_scoped_dataset("pipeline", scope=scope)
             stuck = pipeline[pipeline["IS_STUCK"].fillna(0).astype(int) == 1]
+            detail_columns = [
+                "RO_ID",
+                "ORG_NM",
+                "LATEST_STAGE_NM",
+                "IS_STUCK",
+                "FAIL_REC_CNT",
+                "REJ_REC_CNT",
+                "SCS_PCT",
+                "FAILURE_STATUS",
+            ]
+            available_columns = [column for column in detail_columns if column in stuck.columns]
             details = (
-                stuck[["RO_ID", "ORG_NM", "LATEST_STAGE_NM", "IS_STUCK"]].head(10).to_dict("records")
+                stuck[available_columns].head(10).to_dict("records")
                 if not stuck.empty
                 else []
             )

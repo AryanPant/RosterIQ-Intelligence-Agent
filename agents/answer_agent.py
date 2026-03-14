@@ -1,3 +1,5 @@
+import pandas as pd
+
 from engines.procedure_runner import ProcedureRunner
 from memory.episodic_memory import EpisodicMemory
 from memory.procedural_memory import ProceduralMemory
@@ -229,6 +231,317 @@ Answer in 1 short sentence.
 """.strip()
 
     @staticmethod
+    def _has_analysis_request(brief):
+
+        analytical_intents = {
+            "trend_analysis",
+            "record_quality",
+            "pipeline_diagnostics",
+            "root_cause_analysis",
+            "retry_analysis",
+        }
+        return bool(set(brief.get("intents", [])) & analytical_intents)
+
+    def _is_combined_memory_analysis_query(self, state):
+
+        brief = state.get("investigation_brief", {})
+        if not brief.get("is_memory_query"):
+            return False
+        if self._has_analysis_request(brief):
+            return True
+
+        normalized = (state.get("query") or "").lower()
+        return any(
+            marker in normalized
+            for marker in [
+                "based on",
+                "root cause",
+                "why",
+                "cause",
+                "reason",
+                "current pipeline stage",
+                "pipeline stage",
+                "scs_percent",
+                "scs percent",
+                "rej_rec_cnt",
+                "reject",
+                "rejection",
+            ]
+        )
+
+    @staticmethod
+    def _get_procedure_result(state, procedure_name):
+
+        for result in state.get("procedure_results", []):
+            if result.get("procedure") == procedure_name:
+                return result
+        return {}
+
+    def _build_current_analysis_snapshot(self, state):
+
+        metrics = state.get("record_quality", {}).get("market_metrics", {})
+        root_cause = state.get("root_cause", {})
+        pipeline_df = state.get("record_quality", {}).get("pipeline_df")
+        duration_anomalies = state.get("pipeline_health", {}).get("duration_anomalies")
+        audit_result = self._get_procedure_result(state, "record_quality_audit")
+        audit_details = audit_result.get("details", {}) if isinstance(audit_result.get("details"), dict) else {}
+        lines = []
+
+        if metrics:
+            lines.extend(
+                [
+                    f"- Latest market month: {metrics.get('month', 'Unknown')}",
+                    f"- SCS_PERCENT: {float(metrics.get('success_rate', 0)):.2f}%",
+                    f"- SCS_PERCENT delta vs previous month: {float(metrics.get('success_rate_delta', 0)):+.2f} points",
+                ]
+            )
+
+        if pipeline_df is not None and not pipeline_df.empty and {"TOT_REC_CNT", "REJ_REC_CNT"}.issubset(pipeline_df.columns):
+            total_records = float(pd.to_numeric(pipeline_df["TOT_REC_CNT"], errors="coerce").fillna(0).sum())
+            rejected_records = float(pd.to_numeric(pipeline_df["REJ_REC_CNT"], errors="coerce").fillna(0).sum())
+            rejection_rate = (rejected_records / total_records * 100) if total_records else 0
+            lines.extend(
+                [
+                    f"- REJ_REC_CNT total: {int(rejected_records)}",
+                    f"- Rejection rate by records: {rejection_rate:.2f}%",
+                ]
+            )
+
+        evaluated_metric = audit_details.get("evaluated_metric")
+        if evaluated_metric:
+            display_formula = self._display_formula(
+                audit_details.get("stored_function", ""),
+                evaluated_metric=evaluated_metric,
+            )
+            lines.extend(
+                [
+                    f"- Record-quality issue rate: {float(evaluated_metric.get('value', 0)) * 100:.2f}%",
+                    f"- Record-quality formula: {display_formula}",
+                ]
+            )
+
+        if root_cause.get("primary_stage"):
+            lines.append(f"- Current dominant pipeline stage: {root_cause['primary_stage']}")
+        if root_cause.get("stuck_count") is not None:
+            lines.append(f"- Current stuck roster count: {int(root_cause.get('stuck_count', 0))}")
+        if duration_anomalies is not None and not duration_anomalies.empty:
+            top_anomaly = duration_anomalies.iloc[0]
+            lines.append(
+                f"- Top duration anomaly: {top_anomaly.get('STAGE_DURATION_COLUMN', top_anomaly.get('STAGE_NAME', 'Unknown stage'))} "
+                f"at {float(top_anomaly.get('ANOMALY_RATIO', 0)):.2f}x historical average"
+            )
+        if root_cause.get("top_failure_status"):
+            lines.append(
+                f"- Top failure status: {root_cause['top_failure_status']['status']} "
+                f"({root_cause['top_failure_status']['count']})"
+            )
+        if root_cause.get("top_impacted_org"):
+            lines.append(
+                f"- Top impacted organization: {root_cause['top_impacted_org']['org']} "
+                f"({root_cause['top_impacted_org']['count']})"
+            )
+
+        return "\n".join(lines) or "None"
+
+    def _build_combined_memory_analysis_prompt(self, state, evidence):
+
+        history = state.get("history", [])
+        if history:
+            latest_entry = history[0]
+            stored_summary = latest_entry.get("metadata", {}).get("investigation_summary") or latest_entry.get("response", "")
+            prior_context = (
+                f"- Prior investigation found: Yes\n"
+                f"- Prior investigation timestamp: {latest_entry.get('timestamp', 'Unknown')}\n"
+                f"- Prior investigation summary: {stored_summary}"
+            )
+        else:
+            prior_context = "- Prior investigation found: No"
+
+        return f"""
+You are a healthcare roster operations analyst.
+User question: {state['query']}
+Market: {state.get('market') or 'not specified'}
+
+PRIOR INVESTIGATION:
+{prior_context}
+
+CURRENT ANALYSIS SNAPSHOT:
+{self._build_current_analysis_snapshot(state)}
+
+Evidence:
+{evidence or 'None'}
+
+Write the answer in 4 short sections with markdown headings:
+**Prior Investigation**
+**Current Evidence**
+**Root Cause**
+**Next Action**
+
+Requirements:
+- Answer whether we investigated this before.
+- Use current live analysis, not just episodic memory.
+- Explicitly mention SCS_PERCENT, REJ_REC_CNT or rejection-rate impact, and the current pipeline stage when available.
+- If the latest month does not actually show a drop, say that clearly.
+- Explain whether the issue looks more like record-quality/rejection leakage or a true pipeline-stage bottleneck.
+""".strip()
+
+    def _build_combined_memory_analysis_fallback(self, state):
+
+        history = state.get("history", [])
+        metrics = state.get("record_quality", {}).get("market_metrics", {})
+        root_cause = state.get("root_cause", {})
+        pipeline_df = state.get("record_quality", {}).get("pipeline_df")
+        duration_anomalies = state.get("pipeline_health", {}).get("duration_anomalies")
+        audit_result = self._get_procedure_result(state, "record_quality_audit")
+        audit_details = audit_result.get("details", {}) if isinstance(audit_result.get("details"), dict) else {}
+        market_label = metrics.get("market") or state.get("market") or "The requested market"
+        lines = ["**Prior Investigation**"]
+
+        if history:
+            latest_entry = history[0]
+            stored_summary = latest_entry.get("metadata", {}).get("investigation_summary") or latest_entry.get("response", "")
+            lines.append(
+                f"Yes. A similar investigation exists from {latest_entry.get('timestamp', 'an earlier run')}. "
+                f"Stored conclusion: {stored_summary}"
+            )
+        else:
+            lines.append("No similar prior investigation was found in episodic memory.")
+
+        lines.extend(["", "**Current Evidence**"])
+        if metrics:
+            current_rate = float(metrics.get("success_rate", 0))
+            delta = float(metrics.get("success_rate_delta", 0))
+            previous_rate = float(metrics.get("previous_success_rate", current_rate))
+            month = metrics.get("month", "the latest month")
+            if delta < 0:
+                lines.append(
+                    f"- {market_label} SCS_PERCENT declined to {current_rate:.2f}% in {month}, "
+                    f"down {abs(delta):.2f} points from {previous_rate:.2f}%."
+                )
+            elif delta > 0:
+                lines.append(
+                    f"- {market_label} SCS_PERCENT is {current_rate:.2f}% in {month}, "
+                    f"up {delta:.2f} points from {previous_rate:.2f}%, so the latest data does not show an active drop."
+                )
+            else:
+                lines.append(
+                    f"- {market_label} SCS_PERCENT is flat at {current_rate:.2f}% in {month} versus the prior month."
+                )
+
+        if pipeline_df is not None and not pipeline_df.empty and {"TOT_REC_CNT", "REJ_REC_CNT"}.issubset(pipeline_df.columns):
+            total_records = float(pd.to_numeric(pipeline_df["TOT_REC_CNT"], errors="coerce").fillna(0).sum())
+            rejected_records = float(pd.to_numeric(pipeline_df["REJ_REC_CNT"], errors="coerce").fillna(0).sum())
+            rejection_rate = (rejected_records / total_records * 100) if total_records else 0
+            lines.append(
+                f"- REJ_REC_CNT totals {int(rejected_records)} rejected records out of {int(total_records)} total records "
+                f"({rejection_rate:.2f}% rejection rate)."
+            )
+
+        evaluated_metric = audit_details.get("evaluated_metric")
+        if evaluated_metric:
+            lines.append(
+                f"- The record-quality issue rate is {float(evaluated_metric.get('value', 0)) * 100:.2f}% "
+                f"using `{self._display_formula(audit_details.get('stored_function', ''), evaluated_metric=evaluated_metric)}`."
+            )
+
+        if root_cause.get("primary_stage"):
+            lines.append(f"- The current dominant pipeline stage is {root_cause['primary_stage']}.")
+        if root_cause.get("stuck_count") is not None:
+            lines.append(f"- There are {int(root_cause.get('stuck_count', 0))} stuck roster operations in the current scope.")
+        if duration_anomalies is not None and not duration_anomalies.empty:
+            top_anomaly = duration_anomalies.iloc[0]
+            lines.append(
+                f"- Top duration anomaly is {top_anomaly.get('STAGE_DURATION_COLUMN', top_anomaly.get('STAGE_NAME', 'Unknown stage'))} "
+                f"at {float(top_anomaly.get('ANOMALY_RATIO', 0)):.2f}x historical average."
+            )
+        if root_cause.get("top_failure_status"):
+            lines.append(
+                f"- The top failure status is {root_cause['top_failure_status']['status']} "
+                f"({root_cause['top_failure_status']['count']} records)."
+            )
+        if root_cause.get("top_impacted_org"):
+            lines.append(
+                f"- The top impacted organization is {root_cause['top_impacted_org']['org']} "
+                f"({root_cause['top_impacted_org']['count']} failed roster operations)."
+            )
+
+        lines.extend(["", "**Root Cause**"])
+        primary_stage = root_cause.get("primary_stage")
+        stuck_count = int(root_cause.get("stuck_count", 0) or 0)
+        if primary_stage == "RESOLVED" and stuck_count == 0:
+            lines.append(
+                "The strongest live signal points to record-quality and rejection leakage rather than a blocked pipeline stage. "
+                "RESOLVED being the dominant stage with zero stuck rosters means the pipeline is still flowing; the degradation is more consistent "
+                "with files losing success through validation or compatibility issues. The duration anomaly should still be reviewed, but it is a "
+                "secondary performance signal rather than the main blocker."
+            )
+        elif stuck_count > 0 and primary_stage:
+            lines.append(
+                f"The main signal is a pipeline bottleneck in {primary_stage}, because stuck inventory is present there and is more likely to be "
+                "dragging success than isolated record-quality noise."
+            )
+        else:
+            lines.append(
+                "The main signal is concentrated failure and rejection pressure in the current scope, not a clearly blocked stage. "
+                "That points more toward file-level quality or validation issues than a system-wide pipeline breakdown."
+            )
+
+        lines.extend(["", "**Next Action**"])
+        if root_cause.get("top_failure_status"):
+            lines.append(
+                f"Start with the {root_cause['top_failure_status']['status']} failure bucket and audit the highest-impact files and organizations, "
+                "because that is the cleanest path to recover SCS performance."
+            )
+        else:
+            lines.append(
+                "Audit the highest-rejection files in the current scope and validate whether the dominant stage behavior is operationally expected."
+            )
+
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _response_looks_truncated(response):
+
+        if not response:
+            return True
+
+        stripped = response.strip()
+        if not stripped:
+            return True
+
+        trailing_connectors = {
+            "and",
+            "or",
+            "but",
+            "because",
+            "with",
+            "to",
+            "of",
+            "for",
+            "in",
+            "on",
+            "at",
+            "by",
+        }
+        last_token = stripped.split()[-1].strip("`*_.,;:()[]{}").lower()
+        if last_token in trailing_connectors:
+            return True
+
+        return False
+
+    @staticmethod
+    def _combined_response_has_required_sections(response):
+
+        normalized = (response or "").lower()
+        required_markers = [
+            "prior investigation",
+            "current evidence",
+            "root cause",
+            "next action",
+        ]
+        return all(marker in normalized for marker in required_markers)
+
+    @staticmethod
     def _display_formula(function_text, evaluated_metric=None):
 
         if evaluated_metric and evaluated_metric.get("expression"):
@@ -275,6 +588,165 @@ Answer in 1 short sentence.
 
         return response
 
+    def _is_combined_procedure_execution_query(self, state):
+
+        brief = state.get("investigation_brief", {})
+        if not brief.get("is_procedure_execution"):
+            return False
+
+        normalized = (state.get("query") or "").lower()
+        return brief.get("is_memory_query") or any(
+            marker in normalized
+            for marker in [
+                "have we investigated",
+                "before",
+                "previous",
+                "past",
+                "explain",
+                "why",
+                "root cause",
+                "cause",
+                "reason",
+                "fail_rec_cnt",
+                "scs_pct",
+                "failure",
+                "failures",
+                "success pct",
+                "success percent",
+            ]
+        )
+
+    @staticmethod
+    def _procedure_scope_text(state, details):
+
+        scope_labels = details.get("scope_labels") or state.get("query_scope", {}).get("labels", [])
+        return ", ".join(scope_labels) if scope_labels else "all matching files"
+
+    @staticmethod
+    def _prior_investigation_lines(history, market_label):
+
+        if history:
+            latest_entry = history[0]
+            stored_summary = latest_entry.get("metadata", {}).get("investigation_summary") or latest_entry.get("response", "")
+            return [
+                "**Prior Investigation**",
+                (
+                    f"Yes. We previously investigated {market_label} on {latest_entry.get('timestamp', 'an earlier run')}. "
+                    f"Stored conclusion: {stored_summary}"
+                ),
+            ]
+
+        return [
+            "**Prior Investigation**",
+            f"No similar prior investigation was found in episodic memory for {market_label}.",
+        ]
+
+    def _build_triage_stuck_ros_detailed_response(self, state, result):
+
+        details = result.get("details", {}) if isinstance(result.get("details"), dict) else {}
+        rows = details.get("rows", [])
+        pipeline_df = state.get("record_quality", {}).get("pipeline_df")
+        metrics = state.get("record_quality", {}).get("market_metrics", {})
+        root_cause = state.get("root_cause", {})
+        history = state.get("history", [])
+        scope_text = self._procedure_scope_text(state, details)
+        market_label = state.get("market") or metrics.get("market") or scope_text
+        stuck_count = int(root_cause.get("stuck_count", len(rows)) or 0)
+        lines = self._prior_investigation_lines(history, market_label)
+
+        lines.extend(["", "**Triage Result**"])
+        if stuck_count > 0:
+            stage_name = root_cause.get("primary_stage") or rows[0].get("LATEST_STAGE_NM", "Unknown")
+            lines.append(
+                f"`triage_stuck_ros` found {stuck_count} stuck roster operations in {scope_text}, concentrated in {stage_name}."
+            )
+            for row in rows[:5]:
+                fail_rec_cnt = int(pd.to_numeric(row.get("FAIL_REC_CNT"), errors="coerce") or 0)
+                rej_rec_cnt = int(pd.to_numeric(row.get("REJ_REC_CNT"), errors="coerce") or 0)
+                scs_pct = float(pd.to_numeric(row.get("SCS_PCT"), errors="coerce") or 0)
+                failure_status = row.get("FAILURE_STATUS") or "Unknown"
+                lines.append(
+                    f"- {row.get('RO_ID', 'Unknown RO')} | {row.get('ORG_NM', 'Unknown org')} | "
+                    f"Stage {row.get('LATEST_STAGE_NM', 'Unknown')} | FAIL_REC_CNT={fail_rec_cnt} | "
+                    f"REJ_REC_CNT={rej_rec_cnt} | SCS_PCT={scs_pct:.2f}% | Failure={failure_status}"
+                )
+        else:
+            lines.append(f"`triage_stuck_ros` found no stuck roster operations in {scope_text}.")
+
+        lines.extend(["", "**Failure Context**"])
+        if pipeline_df is None or pipeline_df.empty:
+            lines.append("I could not find scoped pipeline records to explain the failures.")
+        else:
+            fail_rec_cnt_total = int(pd.to_numeric(pipeline_df.get("FAIL_REC_CNT"), errors="coerce").fillna(0).sum())
+            scs_pct_series = pd.to_numeric(pipeline_df.get("SCS_PCT"), errors="coerce").dropna()
+            avg_scs_pct = float(scs_pct_series.mean()) if not scs_pct_series.empty else 0
+            low_scs_df = pipeline_df.loc[pd.to_numeric(pipeline_df.get("SCS_PCT"), errors="coerce").fillna(100) < 85].copy()
+            low_scs_count = int(len(low_scs_df))
+            lines.append(f"- FAIL_REC_CNT totals {fail_rec_cnt_total} records across the scoped files.")
+            if scs_pct_series.empty:
+                lines.append("- SCS_PCT is unavailable for the scoped files.")
+            else:
+                lines.append(
+                    f"- Average SCS_PCT is {avg_scs_pct:.2f}% with {low_scs_count} files below the 85% threshold."
+                )
+
+            if metrics:
+                lines.append(
+                    f"- Latest market SCS_PERCENT is {float(metrics.get('success_rate', 0)):.2f}% in "
+                    f"{metrics.get('month', 'the latest month')}."
+                )
+
+            if root_cause.get("top_failure_status"):
+                lines.append(
+                    f"- Top failure status is {root_cause['top_failure_status']['status']} "
+                    f"({root_cause['top_failure_status']['count']} records)."
+                )
+
+            if not low_scs_df.empty and "LATEST_STAGE_NM" in low_scs_df.columns:
+                low_scs_stage = low_scs_df["LATEST_STAGE_NM"].fillna("UNKNOWN").value_counts().idxmax()
+                lines.append(f"- The weakest SCS_PCT files are most concentrated in {low_scs_stage}.")
+
+            if not low_scs_df.empty:
+                preview_columns = [
+                    column
+                    for column in ["RO_ID", "ORG_NM", "LATEST_STAGE_NM", "FAIL_REC_CNT", "SCS_PCT", "FAILURE_STATUS"]
+                    if column in low_scs_df.columns
+                ]
+                ranked = low_scs_df.sort_values(["SCS_PCT", "FAIL_REC_CNT"], ascending=[True, False]).head(3)
+                for _, row in ranked[preview_columns].iterrows():
+                    fail_rec_cnt = int(pd.to_numeric(row.get("FAIL_REC_CNT"), errors="coerce") or 0)
+                    scs_pct = float(pd.to_numeric(row.get("SCS_PCT"), errors="coerce") or 0)
+                    lines.append(
+                        f"- Low-SCS file: {row.get('RO_ID', 'Unknown RO')} | {row.get('ORG_NM', 'Unknown org')} | "
+                        f"Stage {row.get('LATEST_STAGE_NM', 'Unknown')} | FAIL_REC_CNT={fail_rec_cnt} | "
+                        f"SCS_PCT={scs_pct:.2f}% | Failure={row.get('FAILURE_STATUS') or 'Unknown'}"
+                    )
+
+        lines.extend(["", "**Interpretation**"])
+        if stuck_count > 0:
+            lines.append(
+                "This is an active stuck-roster problem in the scoped market, so the stuck inventory should be cleared first. "
+                "Use the FAIL_REC_CNT and low SCS_PCT rows above to prioritize the worst affected operations."
+            )
+        else:
+            lines.append(
+                "This is not currently a stuck-roster problem in the scoped market. The stronger signal is broad file-level underperformance: "
+                "FAIL_REC_CNT is elevated and a meaningful share of files sit below the 85% SCS_PCT threshold, so the failures are more consistent "
+                "with quality or validation issues than with an active blocked queue."
+            )
+
+        lines.extend(["", "**Next Action**"])
+        if stuck_count > 0:
+            lines.append(
+                "Triage the listed stuck roster operations first, then audit the lowest-SCS_PCT files in the same stage to separate true queue blockage from bad-input failures."
+            )
+        else:
+            lines.append(
+                "Start with the lowest-SCS_PCT Kansas files and their dominant failure status, then investigate the stage where low-SCS_PCT files cluster to find the main validation or data-quality break."
+            )
+
+        return "\n".join(lines).strip()
+
     def _build_procedure_execution_response(self, state):
 
         procedure_results = state.get("procedure_results", [])
@@ -283,8 +755,10 @@ Answer in 1 short sentence.
 
         result = procedure_results[0]
         details = result.get("details", {}) if isinstance(result.get("details"), dict) else {}
-        scope_labels = details.get("scope_labels") or state.get("query_scope", {}).get("labels", [])
-        scope_text = ", ".join(scope_labels) if scope_labels else "all matching files"
+        scope_text = self._procedure_scope_text(state, details)
+
+        if result.get("procedure") == "triage_stuck_ros" and self._is_combined_procedure_execution_query(state):
+            return self._build_triage_stuck_ros_detailed_response(state, result)
 
         if result.get("procedure") == "record_quality_audit":
             evaluated_metric = details.get("evaluated_metric")
@@ -536,6 +1010,13 @@ Answer in 1 short sentence.
                 "unless the user explicitly asks for quality metrics."
             )
 
+        if self._is_combined_memory_analysis_query(state):
+            return (
+                "Use episodic memory only for the prior-investigation part of the question. "
+                "Ground the main conclusion in the current live evidence, especially SCS_PERCENT, rejection signals, "
+                "and pipeline-stage findings."
+            )
+
         if brief.get("is_memory_query"):
             return "Use episodic memory because the user is explicitly asking about prior investigations."
 
@@ -600,6 +1081,7 @@ Answer in 1 short sentence.
             return state
 
         is_memory_query = brief.get("is_memory_query")
+        combined_memory_analysis = self._is_combined_memory_analysis_query(state)
         tools = set(brief.get("tool_requests", []))
         desired_outputs = set(brief.get("desired_outputs", []))
         scope = brief.get("query_scope", {})
@@ -671,8 +1153,13 @@ Write a concise explanation with:
 3. Recommended next action
 """.strip()
 
-        if is_memory_query:
+        if is_memory_query and not combined_memory_analysis:
             response = self.llm.generate(self._build_memory_prompt(state), system_prompt=system_prompt)
+        elif combined_memory_analysis:
+            response = self.llm.generate(
+                self._build_combined_memory_analysis_prompt(state, evidence),
+                system_prompt=system_prompt,
+            )
         else:
             response = self.llm.generate(prompt, system_prompt=system_prompt)
         if response:
@@ -681,10 +1168,18 @@ Write a concise explanation with:
             error_detail = self.llm.last_error or "Unknown failure"
             state["llm_status"] = f"fallback ({error_detail})"
         if not response:
-            response = self._build_fallback(state)
+            if combined_memory_analysis:
+                response = self._build_combined_memory_analysis_fallback(state)
+            else:
+                response = self._build_fallback(state)
+        elif combined_memory_analysis and (
+            self._response_looks_truncated(response)
+            or not self._combined_response_has_required_sections(response)
+        ):
+            response = self._build_combined_memory_analysis_fallback(state)
         response = self._augment_response_with_web_context(response, web_context)
 
-        if is_memory_query:
+        if is_memory_query and not combined_memory_analysis:
             state["visualizations"] = {}
             report = ""
         else:

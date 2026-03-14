@@ -6,6 +6,61 @@ import pandas as pd
 
 class DataQueryTool:
 
+    STATE_NAME_TO_CODE = {
+        "alabama": "AL",
+        "alaska": "AK",
+        "arizona": "AZ",
+        "arkansas": "AR",
+        "california": "CA",
+        "colorado": "CO",
+        "connecticut": "CT",
+        "delaware": "DE",
+        "district of columbia": "DC",
+        "washington dc": "DC",
+        "florida": "FL",
+        "georgia": "GA",
+        "hawaii": "HI",
+        "idaho": "ID",
+        "illinois": "IL",
+        "indiana": "IN",
+        "iowa": "IA",
+        "kansas": "KS",
+        "kentucky": "KY",
+        "louisiana": "LA",
+        "maine": "ME",
+        "maryland": "MD",
+        "massachusetts": "MA",
+        "michigan": "MI",
+        "minnesota": "MN",
+        "mississippi": "MS",
+        "missouri": "MO",
+        "montana": "MT",
+        "nebraska": "NE",
+        "nevada": "NV",
+        "new hampshire": "NH",
+        "new jersey": "NJ",
+        "new mexico": "NM",
+        "new york": "NY",
+        "north carolina": "NC",
+        "north dakota": "ND",
+        "ohio": "OH",
+        "oklahoma": "OK",
+        "oregon": "OR",
+        "pennsylvania": "PA",
+        "rhode island": "RI",
+        "south carolina": "SC",
+        "south dakota": "SD",
+        "tennessee": "TN",
+        "texas": "TX",
+        "utah": "UT",
+        "vermont": "VT",
+        "virginia": "VA",
+        "washington": "WA",
+        "west virginia": "WV",
+        "wisconsin": "WI",
+        "wyoming": "WY",
+    }
+
     STAGE_METADATA = {
         "PRE_PROCESSING": {
             "aliases": ("pre processing", "pre-processing", "preprocessing"),
@@ -141,6 +196,10 @@ class DataQueryTool:
                 return candidate
 
         normalized = self._normalize_text(query)
+        for state_name, state_code in sorted(self.STATE_NAME_TO_CODE.items(), key=lambda item: len(item[0]), reverse=True):
+            if state_code in self.market_codes and self._contains_phrase(normalized, state_name):
+                return state_code
+
         stopwords = {"IN", "ON", "BY", "OF", "TO", "FOR", "AT", "AND", "ME", "OR"}
         for token in normalized.split():
             candidate = token.upper()
