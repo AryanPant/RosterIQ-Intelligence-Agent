@@ -32,13 +32,12 @@ retry_effectiveness_analysis:
   - Measure whether retries improve success percentage or reduce rejection rates.
   - Flag retry patterns that fail to recover the original issue.
 lob_rejection_breakdown:
-  description: Groups rejection rates by Line of Business for Cedars-Sinai Medical
-    Care Foundation's CA pipeline anomaly, analyzing rejection distribution across
-    business lines with organization-specific context.
-  function: rejection_rate_by_lob
+  description: Groups rejection rates by Line of Business to analyze the distribution
+    of rejections across different business lines.
+  function: rejection_rate_by_lob = SUM(REJ_REC_CNT) / SUM(TOT_REC_CNT) GROUP BY LOB
   logic:
-  - Filter records to Cedars-Sinai Medical Care Foundation's CA pipeline anomaly data.
-  - Group the filtered data by Line of Business (LOB).
+  - Filter records to the desired time period and market or organization if needed.
+  - Group the data by Line of Business (LOB).
   - For each LOB, compute total REJ_REC_CNT and total TOT_REC_CNT.
   - Calculate rejection rate as SUM(REJ_REC_CNT) divided by SUM(TOT_REC_CNT).
-  - Return LOB-specific rejection rates with Cedars-Sinai business context annotations.
+  - Return the rejection rate per LOB for further analysis or reporting.

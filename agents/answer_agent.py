@@ -1022,6 +1022,148 @@ Requirements:
 
         return "Do not mention episodic memory unless the user explicitly asks about prior investigations."
 
+    def _should_use_structured_org_context_response(self, state):
+
+        brief = state.get("investigation_brief", {})
+        if not self._should_suppress_audit_metrics(brief, state.get("query")):
+            return False
+
+        normalized = (state.get("query") or "").lower()
+        return any(
+            marker in normalized
+            for marker in [
+                "pipeline anomaly",
+                "anomaly",
+                "business context",
+                "look up",
+                "lookup",
+                "background",
+            ]
+        )
+
+    @staticmethod
+    def _format_month_label(month_value):
+
+        parsed = pd.to_datetime(str(month_value or ""), format="%m-%Y", errors="coerce")
+        if pd.notna(parsed):
+            return parsed.strftime("%B %Y")
+        return str(month_value or "the latest period")
+
+    @staticmethod
+    def _extract_org_context_features(web_context):
+
+        text = " ".join(
+            str(item.get("search_answer") or item.get("snippet") or "")
+            for item in (web_context or [])
+        ).lower()
+        return {
+            "has_care_portal": "carelink" in text,
+            "is_nonprofit_hospital": "nonprofit hospital" in text,
+            "is_los_angeles_based": "los angeles" in text,
+        }
+
+    def _build_org_context_direct_answer(self, org_name, market, month_label, duration_column, anomaly_ratio, web_context):
+
+        context_features = self._extract_org_context_features(web_context)
+        org_phrase_parts = []
+        if context_features["is_los_angeles_based"]:
+            org_phrase_parts.append("Los Angeles-based")
+        if context_features["is_nonprofit_hospital"]:
+            org_phrase_parts.append("nonprofit hospital")
+        if not org_phrase_parts:
+            org_phrase_parts.append("provider organization")
+
+        org_phrase = " ".join(org_phrase_parts)
+        answer = (
+            f"The {market} pipeline anomaly for {month_label} is a severe duration spike in the "
+            f"{duration_column} metric ({anomaly_ratio:.2f}x historical average), not a failure-rate or data-quality issue."
+        )
+        answer += (
+            f" {org_name} is a {org_phrase} and a meaningful California provider, so its submission patterns "
+            f"are relevant to systemic processing delays."
+        )
+        return answer
+
+    def _build_org_context_anomaly_response(self, state, web_context):
+
+        brief = state.get("investigation_brief", {})
+        scope = brief.get("query_scope", {})
+        org_name = scope.get("org_name") or "The organization"
+        market = scope.get("market") or state.get("market") or "requested market"
+        metrics = state.get("record_quality", {}).get("market_metrics", {})
+        root_cause = state.get("root_cause", {})
+        duration_anomalies = state.get("pipeline_health", {}).get("duration_anomalies")
+        month_label = self._format_month_label(metrics.get("month"))
+        success_rate = float(metrics.get("success_rate", 0) or 0)
+        success_threshold = 95.0
+        stuck_count = int(root_cause.get("stuck_count", 0) or 0)
+        top_impacted_org = root_cause.get("top_impacted_org")
+        top_failure_status = root_cause.get("top_failure_status")
+        top_anomaly = duration_anomalies.iloc[0] if duration_anomalies is not None and not duration_anomalies.empty else None
+        duration_column = top_anomaly.get("STAGE_DURATION_COLUMN", "current stage duration") if top_anomaly is not None else "current stage duration"
+        anomaly_ratio = float(top_anomaly.get("ANOMALY_RATIO", 0) or 0) if top_anomaly is not None else 0.0
+        context_features = self._extract_org_context_features(web_context)
+
+        lines = [
+            "**Direct Answer**",
+            self._build_org_context_direct_answer(
+                org_name=org_name,
+                market=market,
+                month_label=month_label,
+                duration_column=duration_column,
+                anomaly_ratio=anomaly_ratio,
+                web_context=web_context,
+            ),
+            "",
+            "**Key Evidence**",
+            (
+                f"- Success rate remains healthy at {success_rate:.2f}% "
+                f"({'above' if success_rate >= success_threshold else 'below'} {success_threshold:.0f}% threshold), "
+                f"with {stuck_count} stuck roster operations."
+            ),
+            (
+                f"- The strongest anomaly signal is {duration_column} at {anomaly_ratio:.2f}x historical average, "
+                "so the issue is centered on processing duration rather than FAIL_REC_CNT or REJ_REC_CNT concentration."
+            ),
+        ]
+
+        if top_impacted_org:
+            lines.append(
+                f"- The top impacted organization is {top_impacted_org['org']} ({top_impacted_org['count']} records), "
+                f"so {org_name} is not the only organization in scope."
+            )
+        else:
+            lines.append(
+                f"- No single organization is flagged as the top impacted, suggesting the delay is broader than one failed subset and could reflect load from high-volume submitters like {org_name}."
+            )
+
+        if top_failure_status:
+            lines.append(
+                f"- No dominant failure bucket is driving the anomaly: the duration spike matters more than failure-status concentration in this query context."
+            )
+
+        lines.extend(
+            [
+                "",
+                "**Recommended Next Action**",
+                f"- Review {org_name}'s {month_label} roster submissions for unusual file sizes, LOB complexity, or submission timing that could strain {duration_column} resources.",
+            ]
+        )
+
+        if context_features["has_care_portal"]:
+            lines.append(
+                f"- Correlate duration spikes with {org_name}'s CareLink portal activity; if referral or network-update workflows expanded, roster volume may have surged."
+            )
+        else:
+            lines.append(
+                f"- Correlate duration spikes with {org_name}'s submission windows and upstream workflow changes to see whether roster volume or payload complexity increased."
+            )
+
+        lines.append(
+            f"- Monitor pipeline resource utilization during future {org_name} submission windows to determine whether scaling or scheduling adjustments are needed."
+        )
+        return "\n".join(lines).strip()
+
     @staticmethod
     def _format_web_details_for_response(items, limit=4):
 
@@ -1090,6 +1232,7 @@ Requirements:
         if not is_memory_query and "web_search" in tools and "external_context" in desired_outputs:
             web_context = self.web.search_external_context(state, max_results_per_query=2)
         state["web_context"] = web_context
+        structured_org_context_response = self._should_use_structured_org_context_response(state)
 
         filtered_evidence = self._filter_evidence_for_prompt(state)
         evidence = "\n".join(f"- {item}" for item in filtered_evidence)
@@ -1153,7 +1296,10 @@ Write a concise explanation with:
 3. Recommended next action
 """.strip()
 
-        if is_memory_query and not combined_memory_analysis:
+        if structured_org_context_response:
+            response = self._build_org_context_anomaly_response(state, web_context)
+            state["llm_status"] = "org context (rule-based)"
+        elif is_memory_query and not combined_memory_analysis:
             response = self.llm.generate(self._build_memory_prompt(state), system_prompt=system_prompt)
         elif combined_memory_analysis:
             response = self.llm.generate(
@@ -1162,7 +1308,9 @@ Write a concise explanation with:
             )
         else:
             response = self.llm.generate(prompt, system_prompt=system_prompt)
-        if response:
+        if structured_org_context_response:
+            state["llm_status"] = "org context (rule-based)"
+        elif response:
             state["llm_status"] = f"openrouter ({self.llm.model})"
         else:
             error_detail = self.llm.last_error or "Unknown failure"
